@@ -568,6 +568,9 @@ Expected: FAIL (`ModuleNotFoundError: bicikelj_log.storage`). (If Azurite is dow
 
 - [ ] **Step 4: Implement `src/bicikelj_log/storage.py`**
 
+Note: the append-blob create must be conditional (`if_none_match="*"`) — an
+unconditional `create_append_blob()` truncates the blob on every call.
+
 ```python
 from datetime import date
 
@@ -612,7 +615,10 @@ class BlobStore:
     def append_status(self, day: date, data: bytes) -> None:
         blob = self._cc.get_blob_client(status_blob_path(day))
         try:
-            blob.create_append_blob()
+            # create_append_blob() unconditionally overwrites an existing
+            # blob, so require absence via If-None-Match: * to make this a
+            # true create-if-absent (otherwise every call would truncate).
+            blob.create_append_blob(if_none_match="*")
         except ResourceExistsError:
             pass
         blob.append_block(data)

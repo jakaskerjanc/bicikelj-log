@@ -81,8 +81,9 @@ both directly from Blob).
 
 ## Data flow (one run)
 
-1. Fetch `station_status.json` + `station_information.json` in parallel (`httpx`,
-   ~10s timeout, 2× retry with backoff on network/5xx only).
+1. Fetch `station_status.json` then `station_information.json` sequentially
+   (`httpx`, ~10s timeout, 2× retry with backoff on network/5xx only; well
+   within the per-minute budget).
 2. Validate envelope: `data` present, `station_status` non-empty. Malformed →
    log + exit 1, write nothing (no partial write).
 3. Transform status → JSONL lines. `ts` from feed `last_updated`.

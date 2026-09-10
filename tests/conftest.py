@@ -1,3 +1,4 @@
+import os
 import uuid
 
 import pytest
@@ -20,6 +21,8 @@ def azurite_container():
         cc = ContainerClient.from_connection_string(AZURITE_CONN, name)
         cc.create_container()
     except AzureError as e:
+        if os.environ.get("REQUIRE_AZURITE"):
+            pytest.fail(f"Azurite required but unavailable: {e}")
         pytest.skip(f"Azurite not available: {e}")
     try:
         yield cc

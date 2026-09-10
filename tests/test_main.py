@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 
 import httpx
@@ -47,3 +48,15 @@ def test_run_once_failure_writes_nothing_and_returns_one(monkeypatch):
     assert rc == 1
     assert store.appends == []
     assert store.infos == []
+
+
+def test_main_logs_and_returns_one_on_config_failure(monkeypatch, capsys):
+    def boom():
+        raise ValueError("no creds")
+    monkeypatch.setattr(m.Config, "from_env", staticmethod(boom))
+    rc = m.main()
+    assert rc == 1
+    out = capsys.readouterr().out.strip()
+    line = json.loads(out.splitlines()[-1])
+    assert line["ok"] is False
+    assert "no creds" in line["error"]

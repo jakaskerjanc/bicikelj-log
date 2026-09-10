@@ -18,7 +18,12 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
+      - name: Wait for Azurite
+        run: |
+          timeout 60 bash -c 'until curl -s -o /dev/null http://127.0.0.1:10000/devstoreaccount1; do sleep 1; done'
       - run: pytest -v
+        env:
+          REQUIRE_AZURITE: "1"
 
   build-and-push:
     needs: test

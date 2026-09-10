@@ -4,6 +4,7 @@ from bicikelj_log.config import Config
 
 def test_from_env_reads_connection_string(monkeypatch):
     monkeypatch.delenv("BICIKELJ_STORAGE_ACCOUNT_URL", raising=False)
+    monkeypatch.delenv("BICIKELJ_GBFS_BASE_URL", raising=False)
     monkeypatch.setenv("AZURE_STORAGE_CONNECTION_STRING", "UseDevelopmentStorage=true")
     monkeypatch.setenv("BICIKELJ_CONTAINER", "bicikelj")
     cfg = Config.from_env()

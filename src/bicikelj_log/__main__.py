@@ -35,10 +35,15 @@ def run_once(config: Config, http: httpx.Client, store: BlobStore, *, now: datet
 
 
 def main() -> int:
-    config = Config.from_env()
-    with httpx.Client(timeout=10) as http:
-        store = BlobStore.from_config(config)
-        return run_once(config, http, store, now=datetime.now(timezone.utc))
+    now = datetime.now(timezone.utc)
+    try:
+        config = Config.from_env()
+        with httpx.Client(timeout=10) as http:
+            store = BlobStore.from_config(config)
+            return run_once(config, http, store, now=now)
+    except Exception as e:  # noqa: BLE001 - config/auth setup failed before run_once's guard
+        _log(ts=now.isoformat(), ok=False, station_count=0, duration_ms=0, error=str(e))
+        return 1
 
 
 if __name__ == "__main__":

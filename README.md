@@ -31,3 +31,9 @@ python -m bicikelj_log
 5. Verify blobs appear under `status/YYYY/MM/DD.jsonl` in the storage account.
 
 Region is pinned to `germanywestcentral` (subscription policy).
+
+**Caveat:** `infra/provision.sh` runs `az storage container create --auth-mode login`,
+which is a data-plane call. Your identity needs a blob data-plane role on the new
+storage account (e.g. `Storage Blob Data Contributor` or `Owner`) — management-plane
+`Contributor` alone gets a 403. Grant yourself that role before running, or switch
+the script to `--auth-mode key`.
