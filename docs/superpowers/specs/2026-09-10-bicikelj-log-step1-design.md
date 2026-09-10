@@ -105,6 +105,17 @@ Idempotency: overlapping/rerun could double-append a minute. No write-side guard
 
 ## Deployment
 
+- **Region:** `germanywestcentral`. The subscription enforces an Azure Policy
+  ("Allowed resource deployment regions") that permits only `germanywestcentral`,
+  `francecentral`, `switzerlandnorth`, `spaincentral`, `belgiumcentral` — any other
+  region (e.g. `westus`) is denied at deploy time. Container Apps + Blob are
+  available in all five; `germanywestcentral` chosen (closest to Ljubljana, full
+  Container Apps support).
+- **Providers:** register before first deploy (subscription is Owner-level, so
+  self-service):
+  `az provider register --namespace Microsoft.App` (+ `Microsoft.OperationalInsights`
+  for the env's Log Analytics, `Microsoft.ManagedIdentity`). `Microsoft.Storage`
+  is already registered.
 - **Image:** `python:3.12-slim`, non-root, `CMD ["python","-m","bicikelj_log"]`.
 - **Registry:** `ghcr.io` (free). Built + pushed via GitHub Actions on push to main.
   (Avoid Azure Container Registry Basic — ~$5/mo would dwarf all other costs.)
@@ -113,8 +124,9 @@ Idempotency: overlapping/rerun could double-append a minute. No write-side guard
   (cron retries next minute).
 - **Auth:** system-assigned Managed Identity → `Storage Blob Data Contributor` on
   the storage account. No secrets in env; env holds only account + container name.
-- **Provisioning:** documented `az` CLI commands (resource group, storage account,
-  blob container, container-apps environment, job). Bicep optional, later.
+- **Provisioning:** documented `az` CLI commands (provider registration, resource
+  group in `germanywestcentral`, storage account, blob container, container-apps
+  environment, job). Bicep optional, later.
 
 ## Testing
 
