@@ -1,0 +1,28 @@
+{
+  "last_updated": 1757500800,
+  "ttl": 1,
+  "version": "3.0",
+  "data": {
+    "stations": [
+      {
+        "station_id": "1",
+        "num_vehicles_available": 5,
+        "num_docks_available": 15,
+        "num_vehicles_disabled": 1,
+        "num_docks_disabled": 0,
+        "is_installed": true,
+        "is_renting": true,
+        "is_returning": true,
+        "last_reported": 1757500790
+      },
+      {
+        "station_id": "2",
+        "num_vehicles_available": 0,
+        "num_docks_available": 20,
+        "is_installed": true,
+        "is_renting": false,
+        "is_returning": true
+      }
+    ]
+  }
+}
