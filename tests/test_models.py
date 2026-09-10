@@ -28,7 +28,9 @@ def test_status_rows_defaults_missing_optionals():
     assert r1.bikes_disabled == 0
     assert r1.docks_disabled == 0
     assert r1.last_reported is None
+    assert r1.is_installed is False
     assert r1.is_renting is False
+    assert r1.is_returning is False
 
 
 def test_rows_to_jsonl_one_line_per_row_with_trailing_newline():
