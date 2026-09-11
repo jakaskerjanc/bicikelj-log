@@ -1,0 +1,51 @@
+name: deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      resourceGroup:
+        description: "Azure resource group to deploy into"
+        required: true
+        default: "bicikelj-rg"
+      location:
+        description: "Azure region (subscription policy allows only a few EU regions)"
+        required: true
+        default: "francecentral"
+      storageAccountName:
+        description: "Existing storage account name to reuse (leave blank to auto-generate a new one)"
+        required: false
+        default: ""
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Register required resource providers
+        run: |
+          az provider register --namespace Microsoft.App --wait
+          az provider register --namespace Microsoft.OperationalInsights --wait
+          az provider register --namespace Microsoft.ManagedIdentity --wait
+          az provider register --namespace Microsoft.Storage --wait
+          az provider register --namespace Microsoft.Authorization --wait
+      - name: Ensure resource group exists
+        run: |
+          az group create -n "${{ inputs.resourceGroup }}" -l "${{ inputs.location }}"
+      - name: Deploy Bicep
+        run: |
+          params=(location="${{ inputs.location }}")
+          if [ -n "${{ inputs.storageAccountName }}" ]; then
+            params+=(storageAccountName="${{ inputs.storageAccountName }}")
+          fi
+          az deployment group create \
+            -g "${{ inputs.resourceGroup }}" \
+            -f infra/main.bicep \
+            -p "${params[@]}"
