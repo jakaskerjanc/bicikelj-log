@@ -1,8 +1,7 @@
 # bicikelj-log
 
 Polls the BicikeLJ GBFS feed every 5 minutes and appends per-station availability
-to Azure Blob Storage. Step 1 of 2 (fetch & save). See
-`docs/superpowers/specs/2026-09-10-bicikelj-log-step1-design.md`.
+to Azure Blob Storage. Step 1 of 2 (fetch & save).
 
 ## Local dev
 
