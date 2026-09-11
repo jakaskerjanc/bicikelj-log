@@ -10,7 +10,7 @@ on:
       location:
         description: "Azure region (subscription policy allows only a few EU regions)"
         required: true
-        default: "germanywestcentral"
+        default: "francecentral"
       storageAccountName:
         description: "Existing storage account name to reuse (leave blank to auto-generate a new one)"
         required: false

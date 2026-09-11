@@ -1,5 +1,5 @@
-@description('Azure region (subscription policy currently allows only a few EU regions)')
-param location string = 'germanywestcentral'
+@description('Azure region (subscription policy allows only a few EU regions; germanywestcentral hits MaxNumberOfEnvironmentsInSubExceeded for Container Apps)')
+param location string = 'francecentral'
 
 @description('Blob container name for the JSONL output')
 param containerName string = 'bicikelj'
