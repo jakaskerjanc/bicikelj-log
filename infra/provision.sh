@@ -30,7 +30,7 @@ az containerapp env create -n "$ENV" -g "$RG" -l "$LOCATION"
 
 # --- Scheduled job (every minute), system-assigned identity ---
 az containerapp job create -n "$JOB" -g "$RG" --environment "$ENV" \
-  --trigger-type Schedule --cron-expression "* * * * *" \
+  --trigger-type Schedule --cron-expression "*/5 * * * *" \
   --replica-timeout 60 --replica-retry-limit 0 \
   --cpu 0.25 --memory 0.5Gi \
   --image "$IMAGE" \
