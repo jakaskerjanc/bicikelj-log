@@ -54,6 +54,9 @@ resource storage 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   kind: 'StorageV2'
   properties: {
     accessTier: 'Hot'
+    minimumTlsVersion: 'TLS1_2'
+    supportsHttpsTrafficOnly: true
+    allowBlobPublicAccess: false
   }
 }
 
@@ -82,8 +85,8 @@ resource job 'Microsoft.App/jobs@2024-03-01' = {
         parallelism: 1
         replicaCompletionCount: 1
       }
-      replicaTimeout: 60
-      replicaRetryLimit: 0
+      replicaTimeout: 300
+      replicaRetryLimit: 1
     }
     template: {
       containers: [

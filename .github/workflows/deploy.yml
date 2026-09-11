@@ -7,6 +7,14 @@ on:
         description: "Azure resource group to deploy into"
         required: true
         default: "bicikelj-rg"
+      location:
+        description: "Azure region (subscription policy allows only a few EU regions)"
+        required: true
+        default: "germanywestcentral"
+      storageAccountName:
+        description: "Existing storage account name to reuse (leave blank to auto-generate a new one)"
+        required: false
+        default: ""
 
 jobs:
   deploy:
@@ -26,11 +34,18 @@ jobs:
           az provider register --namespace Microsoft.App --wait
           az provider register --namespace Microsoft.OperationalInsights --wait
           az provider register --namespace Microsoft.ManagedIdentity --wait
+          az provider register --namespace Microsoft.Storage --wait
+          az provider register --namespace Microsoft.Authorization --wait
       - name: Ensure resource group exists
         run: |
-          az group create -n "${{ inputs.resourceGroup }}" -l germanywestcentral
+          az group create -n "${{ inputs.resourceGroup }}" -l "${{ inputs.location }}"
       - name: Deploy Bicep
         run: |
+          params=(location="${{ inputs.location }}")
+          if [ -n "${{ inputs.storageAccountName }}" ]; then
+            params+=(storageAccountName="${{ inputs.storageAccountName }}")
+          fi
           az deployment group create \
             -g "${{ inputs.resourceGroup }}" \
-            -f infra/main.bicep
+            -f infra/main.bicep \
+            -p "${params[@]}"
