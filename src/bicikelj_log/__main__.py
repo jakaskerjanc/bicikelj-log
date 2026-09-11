@@ -20,7 +20,7 @@ def run_once(config: Config, http: httpx.Client, store: BlobStore, *, now: datet
     try:
         status_feed, info_feed = fetch_feeds(http, config.gbfs_base_url)
         rows = status_rows(status_feed)
-        day = datetime.fromtimestamp(status_feed["last_updated"], tz=timezone.utc).date()
+        day = datetime.fromtimestamp(rows[0].ts, tz=timezone.utc).date()
         store.append_status(day, rows_to_jsonl(rows))
         store.write_station_info_if_absent(
             day, json.dumps(info_feed, separators=(",", ":")).encode("utf-8")

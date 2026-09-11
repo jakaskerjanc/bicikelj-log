@@ -25,9 +25,9 @@ def _cfg():
 
 
 def test_run_once_success_writes_and_returns_zero(monkeypatch):
-    status = {"last_updated": 1757500800, "data": {"stations": [
+    status = {"last_updated": "2025-09-10T12:00:00Z", "data": {"stations": [
         {"station_id": "1", "num_vehicles_available": 5, "num_docks_available": 15}]}}
-    info = {"last_updated": 1757500800, "data": {"stations": [{"station_id": "1"}]}}
+    info = {"last_updated": "2025-09-10T12:00:00Z", "data": {"stations": [{"station_id": "1"}]}}
     monkeypatch.setattr(m, "fetch_feeds", lambda http, base: (status, info))
     store = FakeStore()
     with httpx.Client() as http:

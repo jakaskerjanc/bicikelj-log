@@ -15,10 +15,10 @@ def test_status_rows_maps_fields_and_uses_feed_timestamp():
     assert len(rows) == 2
     r0 = rows[0]
     assert r0 == StatusRow(
-        ts=1757500800, station_id="1", bikes=5, docks=15,
+        ts=1757505600, station_id="1", bikes=5, docks=15,
         bikes_disabled=1, docks_disabled=0,
         is_installed=True, is_renting=True, is_returning=True,
-        last_reported=1757500790,
+        last_reported=1757505590,
     )
 
 
@@ -42,5 +42,5 @@ def test_rows_to_jsonl_one_line_per_row_with_trailing_newline():
     assert text.endswith("\n")
     first = json.loads(lines[0])
     assert first["station_id"] == "1"
-    assert first["ts"] == 1757500800
+    assert first["ts"] == 1757505600
     assert first["bikes"] == 5

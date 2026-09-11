@@ -8,7 +8,7 @@ STORAGE=bicikeljlog$RANDOM           # must be globally unique, lowercase
 CONTAINER=bicikelj
 ENV=bicikelj-env
 JOB=bicikelj-log-job
-IMAGE=ghcr.io/OWNER/bicikelj-log:latest   # <-- set your ghcr owner/repo
+IMAGE=ghcr.io/jakaskerjanc/bicikelj-log:latest
 
 # --- Register providers (first time only) ---
 az provider register --namespace Microsoft.App --wait
@@ -21,7 +21,7 @@ az group create -n "$RG" -l "$LOCATION"
 # --- Storage account + blob container ---
 az storage account create -n "$STORAGE" -g "$RG" -l "$LOCATION" \
   --sku Standard_LRS --kind StorageV2 --access-tier Hot
-az storage container create --account-name "$STORAGE" -n "$CONTAINER" --auth-mode login
+az storage container create --account-name "$STORAGE" -n "$CONTAINER" --auth-mode key
 
 ACCOUNT_URL="https://$STORAGE.blob.core.windows.net"
 

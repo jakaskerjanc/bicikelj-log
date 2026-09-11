@@ -1,5 +1,5 @@
 {
-  "last_updated": 1757500800,
+  "last_updated": "2025-09-10T12:00:00Z",
   "ttl": 1,
   "version": "3.0",
   "data": {
@@ -13,7 +13,7 @@
         "is_installed": true,
         "is_renting": true,
         "is_returning": true,
-        "last_reported": 1757500790
+        "last_reported": "2025-09-10T11:59:50Z"
       },
       {
         "station_id": "2",

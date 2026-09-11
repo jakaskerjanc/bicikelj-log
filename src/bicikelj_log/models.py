@@ -1,5 +1,11 @@
 import json
 from dataclasses import asdict, dataclass
+from datetime import datetime
+
+
+def parse_gbfs_timestamp(value: str) -> int:
+    """GBFS v3 timestamps are RFC3339 strings (e.g. '2026-09-11T09:42:45.957Z')."""
+    return int(datetime.fromisoformat(value).timestamp())
 
 
 @dataclass(frozen=True)
@@ -17,10 +23,11 @@ class StatusRow:
 
 
 def status_rows(status_feed: dict) -> list[StatusRow]:
-    ts = status_feed["last_updated"]
+    ts = parse_gbfs_timestamp(status_feed["last_updated"])
     stations = status_feed["data"]["stations"]
     rows: list[StatusRow] = []
     for s in stations:
+        last_reported = s.get("last_reported")
         rows.append(
             StatusRow(
                 ts=ts,
@@ -32,7 +39,7 @@ def status_rows(status_feed: dict) -> list[StatusRow]:
                 is_installed=s.get("is_installed", False),
                 is_renting=s.get("is_renting", False),
                 is_returning=s.get("is_returning", False),
-                last_reported=s.get("last_reported"),
+                last_reported=parse_gbfs_timestamp(last_reported) if last_reported else None,
             )
         )
     return rows
