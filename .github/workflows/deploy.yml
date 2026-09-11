@@ -31,14 +31,17 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       - name: Register required resource providers
         run: |
-          az provider register --namespace Microsoft.App --wait
-          az provider register --namespace Microsoft.OperationalInsights --wait
-          az provider register --namespace Microsoft.ManagedIdentity --wait
-          az provider register --namespace Microsoft.Storage --wait
-          az provider register --namespace Microsoft.Authorization --wait
+          for ns in Microsoft.App Microsoft.OperationalInsights Microsoft.ManagedIdentity Microsoft.Storage Microsoft.Authorization; do
+            state=$(az provider show --namespace "$ns" --query registrationState -o tsv)
+            if [ "$state" != "Registered" ]; then
+              az provider register --namespace "$ns" --wait
+            fi
+          done
       - name: Ensure resource group exists
         run: |
-          az group create -n "${{ inputs.resourceGroup }}" -l "${{ inputs.location }}"
+          if [ "$(az group exists -n "${{ inputs.resourceGroup }}")" != "true" ]; then
+            az group create -n "${{ inputs.resourceGroup }}" -l "${{ inputs.location }}"
+          fi
       - name: Deploy Bicep
         run: |
           params=(location="${{ inputs.location }}")
