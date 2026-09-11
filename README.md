@@ -24,16 +24,24 @@ python -m bicikelj_log
 
 ## Deploy to Azure
 
+Infra is defined in `infra/main.bicep` and deployed via the `deploy` GitHub Actions
+workflow (`workflow_dispatch`, manual trigger only — it never runs on push).
+
 1. Push to `main` → GitHub Actions builds and pushes the image to ghcr.io.
 2. Make the ghcr package **public** so Container Apps can pull it.
-3. Edit `OWNER` in `infra/provision.sh`, then run it.
-4. Manual test run: `az containerapp job start -n bicikelj-log-job -g bicikelj-rg`.
-5. Verify blobs appear under `status/YYYY/MM/DD.jsonl` in the storage account.
+3. One-time: create an Azure AD app registration with a federated credential for
+   this repo's GitHub Actions OIDC, grant it Contributor + User Access Administrator
+   on the target resource group, and set `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`,
+   `AZURE_SUBSCRIPTION_ID` as repo secrets.
+4. Run the `deploy` workflow from the Actions tab (Run workflow), passing the
+   resource group name.
+5. Manual test run: `az containerapp job start -n bicikelj-log-job -g bicikelj-rg`.
+6. Verify blobs appear under `status/YYYY/MM/DD.jsonl` in the storage account.
 
 Region is pinned to `germanywestcentral` (subscription policy).
 
-**Caveat:** `infra/provision.sh` runs `az storage container create --auth-mode login`,
-which is a data-plane call. Your identity needs a blob data-plane role on the new
-storage account (e.g. `Storage Blob Data Contributor` or `Owner`) — management-plane
-`Contributor` alone gets a 403. Grant yourself that role before running, or switch
-the script to `--auth-mode key`.
+To preview or apply changes locally instead of via CI:
+
+```bash
+az deployment group create -g bicikelj-rg -f infra/main.bicep
+```
