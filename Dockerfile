@@ -1,6 +1,6 @@
-FROM python:3.12-slim
+FROM python:3.12-alpine
 
-RUN useradd --create-home --uid 10001 app
+RUN adduser -D -u 10001 app
 WORKDIR /app
 
 COPY pyproject.toml ./
