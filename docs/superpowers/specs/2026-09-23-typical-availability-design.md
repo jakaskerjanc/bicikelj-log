@@ -212,8 +212,15 @@ Same package and image as step 1; existing flat module layout.
   at ~50 KB each. A CDN can be added in front later with no change to paths.
 - All of the above in `infra/main.bicep`; no portal steps.
 - Cost: storage and reads negligible; total well under $0.10/mo.
-- Risk: the Azure for Students tenant may block `allowBlobPublicAccess: true` by
-  policy. Fallback: enable static website hosting on the public account (one
+- Verified 2026-09-23 on the Azure for Students subscription: the only policy
+  assignment is "Allowed resource deployment regions" (francecentral allowed).
+  A throwaway account in `bicikelj-rg` with `allowBlobPublicAccess: true`, a
+  `Blob`-access container, CORS, and a gzipped upload served anonymously with
+  the headers above (`200`, CORS preflight OK, container listing denied, raw
+  account still private). The Bicep for the public account passed
+  `az deployment group validate`. Test account deleted.
+- If a tenant policy later blocks public blob access: enable static website
+  hosting on the public account (one
   `az storage blob service-properties update --static-website` step in the
   deploy workflow) and publish under `$web/typical/v1/`; only the base URL
   changes.
