@@ -95,8 +95,9 @@ Priors:
 
 With no holiday data yet, `holiday` equals `sun` exactly.
 
-`days_used` for a profile = Σ w over all days of that type in the window (not
-per slot). It grows ~1/week and saturates near 4.3 at 8 weeks.
+`days_used` for a profile = Σ w over the days of that type in the window that
+have any usable data (not per slot; a day with no data at all, e.g. a logger
+outage, adds nothing). It grows ~1/week and saturates near 4.3 at 8 weeks.
 
 ### Worked example (golden test)
 

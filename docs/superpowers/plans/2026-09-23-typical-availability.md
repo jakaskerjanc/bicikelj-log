@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Python `>=3.12`; image stays `python:3.12-alpine`. The only new runtime dependency is `holidays` (pure Python).
-- Constants in code, not env: `WINDOW_DAYS = 56`, `HALF_LIFE_DAYS = 21`, `K = 2.0`, `SLOT_MINUTES = 15`, `TZ = ZoneInfo("Europe/Ljubljana")`.
+- Constants in code, not env: `WINDOW_DAYS = 56`, `HALF_LIFE_DAYS = 21`, `K = 2` (int, so `meta.json` publishes `"k": 2`), `SLOT_MINUTES = 15`, `TZ = ZoneInfo("Europe/Ljubljana")`.
 - Window = local days `[today−56, today−1]`, `today` = the run time converted to `Europe/Ljubljana`. Today is never included.
 - Rows count only if `is_installed and is_renting`; dedupe on `(station_id, ts)` per file.
 - Day types, in this order: `("mon", "tue", "wed", "thu", "fri", "sat", "sun", "holiday")`. Priors: Mon–Fri → weighted mean of non-holiday Mon–Fri; Sat/Sun → weighted mean of Sat+Sun+holiday; holiday → final `sun` value.
@@ -58,7 +58,7 @@ REQUIRE_AZURITE=1 pytest -q   # expect: all existing tests pass
 | Modify `pyproject.toml` | Add `holidays` |
 | Modify `infra/main.bicep` | Public account, CORS, container, typical job, role assignments |
 | Modify `README.md` | Document the new job and public URLs |
-| Tests | `tests/test_daytypes.py`, `tests/test_typical.py`, `tests/test_build_typical.py` (new); `tests/test_config.py`, `tests/test_storage.py` (extend) |
+| Tests | `tests/test_daytypes.py`, `tests/test_typical.py`, `tests/test_build_typical.py` (new); `tests/test_config.py`, `tests/test_storage.py`, `tests/conftest.py` (extend) |
 
 ---
 
@@ -170,8 +170,9 @@ git commit -m "feat: Slovenian day-type calendar for typical profiles"
 - Consumes: `DAY_TYPES`, `WEEKDAY_TYPES`, `day_type` from Task 1 (imported now, used in Task 3).
 - Produces (all in `bicikelj_log.typical`):
   - Constants `TZ`, `WINDOW_DAYS`, `HALF_LIFE_DAYS`, `K`, `SLOT_MINUTES`, `SLOTS_PER_DAY` (= 96), `FIELDS = ("bikes","docks","p_empty","p_full")`.
+  - `class SlotKey(NamedTuple): station_id: str; day: date; slot: int` — `day` is the local date. Plain `(sid, day, slot)` tuples compare/hash equal, so tests may use them as dict keys.
   - `class SlotValues(NamedTuple): bikes: float; docks: float; p_empty: float; p_full: float`
-  - `DailySlots = dict[tuple[str, date, int], SlotValues]` — key `(station_id, local_date, slot)`.
+  - `DailySlots = dict[SlotKey, SlotValues]`.
   - `local_slot(ts: int) -> tuple[date, int]`
   - `class SlotAccumulator` with `add_lines(lines: Iterable[bytes | str]) -> None`, `daily_values() -> DailySlots`, and int attributes `rows_read`, `bad_lines`.
 
@@ -281,9 +282,10 @@ raw JSONL lines -> SlotAccumulator -> daily slot values -> build_profiles()
 -> profile_document() / meta_document().
 """
 import json
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
-from typing import Iterable, Mapping, NamedTuple
+from typing import NamedTuple
 from zoneinfo import ZoneInfo
 
 from .daytypes import DAY_TYPES, WEEKDAY_TYPES, day_type
@@ -291,11 +293,17 @@ from .daytypes import DAY_TYPES, WEEKDAY_TYPES, day_type
 TZ = ZoneInfo("Europe/Ljubljana")
 WINDOW_DAYS = 56
 HALF_LIFE_DAYS = 21
-K = 2.0
+K = 2
 SLOT_MINUTES = 15
 SLOTS_PER_DAY = 24 * 60 // SLOT_MINUTES
 FIELDS = ("bikes", "docks", "p_empty", "p_full")
 _DECIMALS = {"bikes": 1, "docks": 1, "p_empty": 2, "p_full": 2}
+
+
+class SlotKey(NamedTuple):
+    station_id: str
+    day: date  # local (Europe/Ljubljana) date
+    slot: int
 
 
 class SlotValues(NamedTuple):
@@ -305,8 +313,7 @@ class SlotValues(NamedTuple):
     p_full: float
 
 
-# (station_id, local_date, slot) -> SlotValues
-DailySlots = dict[tuple[str, date, int], SlotValues]
+DailySlots = dict[SlotKey, SlotValues]
 
 
 def local_slot(ts: int) -> tuple[date, int]:
@@ -314,12 +321,24 @@ def local_slot(ts: int) -> tuple[date, int]:
     return t.date(), (t.hour * 60 + t.minute) // SLOT_MINUTES
 
 
+@dataclass
+class _SlotSums:
+    bikes: float = 0.0
+    docks: float = 0.0
+    empty_polls: int = 0
+    full_polls: int = 0
+    polls: int = 0
+
+    def mean(self) -> SlotValues:
+        n = self.polls
+        return SlotValues(self.bikes / n, self.docks / n, self.empty_polls / n, self.full_polls / n)
+
+
 class SlotAccumulator:
     """Step 1: fold raw status lines into per-(station, local day, slot) values."""
 
     def __init__(self) -> None:
-        # [sum_bikes, sum_docks, polls_empty, polls_full, polls]
-        self._acc: dict[tuple[str, date, int], list[float]] = {}
+        self._sums: dict[SlotKey, _SlotSums] = {}
         self.rows_read = 0
         self.bad_lines = 0
 
@@ -344,18 +363,15 @@ class SlotAccumulator:
             if not usable:
                 continue
             day, slot = local_slot(key[1])
-            a = self._acc.setdefault((key[0], day, slot), [0.0, 0.0, 0, 0, 0])
-            a[0] += bikes
-            a[1] += docks
-            a[2] += bikes == 0
-            a[3] += docks == 0
-            a[4] += 1
+            s = self._sums.setdefault(SlotKey(key[0], day, slot), _SlotSums())
+            s.bikes += bikes
+            s.docks += docks
+            s.empty_polls += bikes == 0
+            s.full_polls += docks == 0
+            s.polls += 1
 
     def daily_values(self) -> DailySlots:
-        return {
-            k: SlotValues(a[0] / a[4], a[1] / a[4], a[2] / a[4], a[3] / a[4])
-            for k, a in self._acc.items()
-        }
+        return {k: s.mean() for k, s in self._sums.items()}
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
@@ -381,10 +397,11 @@ git commit -m "feat: local-time 15-min slot accumulation of raw status rows"
 **Interfaces:**
 - Consumes: `SlotValues`, `DailySlots`, constants from Task 2; `DAY_TYPES`, `WEEKDAY_TYPES`, `day_type` from Task 1.
 - Produces:
+  - `window_days(today: date) -> list[date]` — local days `[today−WINDOW_DAYS, today−1]`, oldest first. The **only** definition of the window; `build_profiles` and `build_typical` both use it.
   - `weight(day: date, build_date: date) -> float`
-  - `shrink(n: float, x_d: float | None, prior: float | None, k: float = K) -> float | None`
+  - `shrink(n: float, x_d: float | None, prior: float | None) -> float | None` (uses `K`; `x_d` and `K` are the spec's formula names)
   - `@dataclass class Profile: days_used: float; stations: dict[str, dict[str, list[float | None]]]` — `stations[sid][field]` is a 96-long list, unrounded.
-  - `build_profiles(daily: Mapping[tuple[str, date, int], SlotValues], build_date: date) -> dict[str, Profile]` — keys are exactly `DAY_TYPES`.
+  - `build_profiles(daily: DailySlots, build_date: date) -> dict[str, Profile]` — keys are exactly `DAY_TYPES`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -394,6 +411,7 @@ In `tests/test_typical.py`, replace the import line
 ```python
 from bicikelj_log.typical import (
     FIELDS, SlotAccumulator, SlotValues, build_profiles, local_slot, shrink, weight,
+    window_days,
 )
 ```
 
@@ -404,7 +422,14 @@ def sv(bikes: float) -> SlotValues:
     return SlotValues(bikes, 20 - bikes, 0.0, 0.0)
 
 
-# ---- weights and shrinkage -------------------------------------------------
+# ---- window, weights and shrinkage -----------------------------------------
+
+def test_window_is_56_local_days_before_today():
+    days = window_days(date(2026, 9, 23))
+    assert len(days) == 56
+    assert days[0] == date(2026, 7, 29)
+    assert days[-1] == date(2026, 9, 22)
+
 
 def test_weight_halves_every_21_days():
     assert weight(date(2026, 9, 1), date(2026, 9, 22)) == pytest.approx(0.5)
@@ -492,16 +517,22 @@ Expected: FAIL — `ImportError: cannot import name 'build_profiles'`
 Append to `src/bicikelj_log/typical.py`:
 
 ```python
+def window_days(today: date) -> list[date]:
+    """Local days [today-WINDOW_DAYS, today-1], oldest first. Today is never included."""
+    return [today - timedelta(days=i) for i in range(WINDOW_DAYS, 0, -1)]
+
+
 def weight(day: date, build_date: date) -> float:
     return 0.5 ** ((build_date - day).days / HALF_LIFE_DAYS)
 
 
-def shrink(n: float, x_d: float | None, prior: float | None, k: float = K) -> float | None:
+def shrink(n: float, x_d: float | None, prior: float | None) -> float | None:
+    """Spec formula: (n·x_d + K·x_prior) / (n + K), falling back to whichever side exists."""
     if n <= 0 or x_d is None:
         return prior
     if prior is None:
         return x_d
-    return (n * x_d + k * prior) / (n + k)
+    return (n * x_d + K * prior) / (n + K)
 
 
 @dataclass
@@ -531,15 +562,15 @@ def _group(dt: str) -> str:
     return "weekday" if dt in WEEKDAY_TYPES else "rest"
 
 
-def build_profiles(daily: Mapping[tuple[str, date, int], SlotValues], build_date: date) -> dict[str, Profile]:
+def build_profiles(daily: DailySlots, build_date: date) -> dict[str, Profile]:
     """Steps 2-3: recency-weighted, shrunk estimate per (station, day type, slot)."""
-    first = build_date - timedelta(days=WINDOW_DAYS)
+    window = set(window_days(build_date))
     by_type: dict[tuple[str, str, int], _WeightedSum] = {}
     by_group: dict[tuple[str, str, int], _WeightedSum] = {}
-    days_seen: set[date] = set()
+    days_seen: set[date] = set()  # days with data; see days_used below
     stations: set[str] = set()
     for (sid, day, slot), v in daily.items():
-        if not (first <= day < build_date):
+        if day not in window:
             continue
         dt = day_type(day)
         w = weight(day, build_date)
@@ -548,6 +579,9 @@ def build_profiles(daily: Mapping[tuple[str, date, int], SlotValues], build_date
         days_seen.add(day)
         stations.add(sid)
 
+    # Σ w over the window's days of each type that have data (spec: days_used).
+    # A day with no usable poll at all (logger outage) adds no evidence, so it
+    # doesn't count; this is what makes days_used grow ~1/week after deploy.
     days_used = {dt: 0.0 for dt in DAY_TYPES}
     for day in days_seen:
         days_used[day_type(day)] += weight(day, build_date)
@@ -573,7 +607,7 @@ def build_profiles(daily: Mapping[tuple[str, date, int], SlotValues], build_date
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/test_typical.py -v`
-Expected: 17 passed (the golden test must give 9.57)
+Expected: 18 passed (the golden test must give 9.57)
 
 - [ ] **Step 5: Commit**
 
@@ -611,7 +645,7 @@ import pytest
 from bicikelj_log.typical import (
     FIELDS, SLOTS_PER_DAY, Profile, SlotAccumulator, SlotValues, build_profiles,
     has_any_value, local_slot, meta_document, profile_document, shrink,
-    station_list, weight,
+    station_list, weight, window_days,
 )
 ```
 
@@ -662,7 +696,8 @@ def test_meta_document():
     meta = meta_document(profiles, station_list(INFO), datetime(2026, 9, 23, 1, 30, 12, tzinfo=timezone.utc))
     assert meta["generated_at"] == "2026-09-23T01:30:12Z"
     assert meta["timezone"] == "Europe/Ljubljana"
-    assert (meta["slot_minutes"], meta["window_days"], meta["half_life_days"], meta["k"]) == (15, 56, 21, 2.0)
+    assert (meta["slot_minutes"], meta["window_days"], meta["half_life_days"], meta["k"]) == (15, 56, 21, 2)
+    assert json.dumps(meta["k"]) == "2"  # contract says "k": 2, not 2.0
     assert meta["profiles"]["mon"] == {"days_used": 1.7}
     assert list(meta["profiles"]) == ["mon", "tue", "wed", "thu", "fri", "sat", "sun", "holiday"]
     assert meta["stations"][0]["id"] == "1"
@@ -748,7 +783,7 @@ def has_any_value(docs: Iterable[dict]) -> bool:
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/test_typical.py -v`
-Expected: 21 passed
+Expected: 22 passed
 
 - [ ] **Step 5: Commit**
 
@@ -976,7 +1011,7 @@ from .config import Config
 
 INFO_PREFIX = "station_information/"
 PUBLIC_PREFIX = "v1/"
-PUBLIC_CONTENT_SETTINGS = dict(
+PUBLIC_CONTENT_SETTINGS = ContentSettings(
     content_type="application/json",
     content_encoding="gzip",
     cache_control="public, max-age=3600",
@@ -1073,7 +1108,7 @@ class PublicStore:
     def publish_json(self, name: str, doc: dict) -> None:
         body = gzip.compress(json.dumps(doc, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))
         self._cc.get_blob_client(public_blob_path(name)).upload_blob(
-            body, overwrite=True, content_settings=ContentSettings(**PUBLIC_CONTENT_SETTINGS)
+            body, overwrite=True, content_settings=PUBLIC_CONTENT_SETTINGS
         )
 ```
 
@@ -1097,13 +1132,14 @@ git commit -m "feat: raw status reads and gzipped public JSON publisher"
 - Create: `src/bicikelj_log/log.py`
 - Modify: `src/bicikelj_log/__main__.py`
 - Create: `src/bicikelj_log/build_typical.py`
+- Modify: `tests/conftest.py` (add `public_container` fixture)
 - Test: `tests/test_build_typical.py`
 
 **Interfaces:**
-- Consumes: `DAY_TYPES` (Task 1); `TZ`, `WINDOW_DAYS`, `SlotAccumulator`, `build_profiles`, `has_any_value`, `meta_document`, `profile_document`, `station_list` (Tasks 2–4); `Config`, `BlobStore.read_status`, `BlobStore.latest_station_info`, `PublicStore.publish_json`, `public_blob_path` (Task 5).
+- Consumes: `DAY_TYPES` (Task 1); `TZ`, `window_days`, `SlotAccumulator`, `build_profiles`, `has_any_value`, `meta_document`, `profile_document`, `station_list` (Tasks 2–4); `Config`, `BlobStore.read_status`, `BlobStore.latest_station_info`, `PublicStore.publish_json`, `public_blob_path` (Task 5).
 - Produces:
   - `log(**fields) -> None` in `bicikelj_log.log`
-  - `window_days(today: date) -> list[date]`, `utc_file_days(local_days: list[date]) -> list[date]`, `run(raw, public, *, now: datetime) -> int`, `main() -> int` in `bicikelj_log.build_typical`. `run` only needs duck-typed `raw.read_status`, `raw.latest_station_info`, `public.publish_json`.
+  - `utc_file_days(local_days: list[date]) -> list[date]`, `run(raw, public, *, now: datetime) -> int`, `main() -> int` in `bicikelj_log.build_typical`. `run` only needs duck-typed `raw.read_status`, `raw.latest_station_info`, `public.publish_json`.
 
 - [ ] **Step 1: Extract the shared logger**
 
@@ -1124,32 +1160,53 @@ def _log(**fields) -> None:
     print(json.dumps(fields, separators=(",", ":")), flush=True)
 ```
 
-and add below `from .config import Config`:
+add below `from .config import Config`:
 
 ```python
-from .log import log as _log
+from .log import log
 ```
 
-(`import json` stays; it is still used for `json.dumps(info_feed, ...)`.)
+and rename the three `_log(` calls in `run_once` and `main` to `log(`. (`import json` stays; it is still used for `json.dumps(info_feed, ...)`.)
 
 Run: `pytest tests/test_main.py -v`
 Expected: 3 passed
 
-- [ ] **Step 2: Write the failing tests**
+- [ ] **Step 2: Add a second-container fixture**
+
+In `tests/conftest.py`, append (Azurite-backed tests reach containers only via conftest fixtures):
+
+```python
+
+
+@pytest.fixture
+def public_container(azurite_container):
+    """A second container in the same Azurite account, like local dev.
+
+    Depends on azurite_container so the skip/REQUIRE_AZURITE handling applies once.
+    """
+    from azure.storage.blob import ContainerClient
+
+    cc = ContainerClient.from_connection_string(AZURITE_CONN, "pub-" + uuid.uuid4().hex[:12])
+    cc.create_container()
+    try:
+        yield cc
+    finally:
+        cc.delete_container()
+```
+
+- [ ] **Step 3: Write the failing tests**
 
 Create `tests/test_build_typical.py`:
 
 ```python
 import gzip
 import json
-import uuid
 from datetime import date, datetime, timezone
-
-import pytest
 
 import bicikelj_log.build_typical as bt
 from bicikelj_log.daytypes import DAY_TYPES
 from bicikelj_log.storage import BlobStore, PublicStore, public_blob_path
+from bicikelj_log.typical import SLOTS_PER_DAY, window_days
 
 NOW = datetime(2026, 9, 22, 23, 30, tzinfo=timezone.utc)  # 01:30 local on Sep 23
 INFO = {"data": {"stations": [
@@ -1192,15 +1249,8 @@ def last_log(capsys) -> dict:
     return json.loads(capsys.readouterr().out.strip().splitlines()[-1])
 
 
-def test_window_is_56_local_days_before_today():
-    days = bt.window_days(date(2026, 9, 23))
-    assert len(days) == 56
-    assert days[0] == date(2026, 7, 29)
-    assert days[-1] == date(2026, 9, 22)
-
-
 def test_utc_file_days_include_the_day_before_the_window():
-    days = bt.window_days(date(2026, 9, 23))
+    days = window_days(date(2026, 9, 23))
     files = bt.utc_file_days(days)
     assert len(files) == 57
     assert files[0] == date(2026, 7, 28)
@@ -1270,18 +1320,16 @@ def test_main_logs_and_returns_one_on_config_failure(monkeypatch, capsys):
 
 # ---- Azurite integration ---------------------------------------------------
 
-@pytest.fixture
-def public_container(azurite_container):
-    """A second container in the same Azurite account, like local dev."""
-    from azure.storage.blob import ContainerClient
-    from tests.conftest import AZURITE_CONN
+class RecordingPublicStore(PublicStore):
+    """Real PublicStore that also records upload order."""
 
-    cc = ContainerClient.from_connection_string(AZURITE_CONN, "pub-" + uuid.uuid4().hex[:12])
-    cc.create_container()
-    try:
-        yield cc
-    finally:
-        cc.delete_container()
+    def __init__(self, container_client):
+        super().__init__(container_client)
+        self.order = []
+
+    def publish_json(self, name, doc):
+        super().publish_json(name, doc)
+        self.order.append(name)
 
 
 def _read_public(cc, name):
@@ -1296,15 +1344,24 @@ def test_run_end_to_end_on_azurite(azurite_container, public_container):
                     for m, b in [(0, 4), (5, 6), (10, 8)])
     raw.append_status(date(2026, 9, 21), lines.encode())
     raw.write_station_info_if_absent(date(2026, 9, 21), json.dumps(INFO).encode())
-    assert bt.run(raw, PublicStore(public_container), now=NOW) == 0
+    public = RecordingPublicStore(public_container)
+    assert bt.run(raw, public, now=NOW) == 0
 
+    assert public.order == list(DAY_TYPES) + ["meta"]  # meta uploaded last
     names = sorted(b.name for b in public_container.list_blobs())
     assert names == sorted(public_blob_path(n) for n in list(DAY_TYPES) + ["meta"])
-    settings, mon = _read_public(public_container, "mon")
-    assert (settings.content_type, settings.content_encoding, settings.cache_control) == (
-        "application/json", "gzip", "public, max-age=3600")
+    for dt in DAY_TYPES:
+        settings, doc = _read_public(public_container, dt)
+        assert (settings.content_type, settings.content_encoding, settings.cache_control) == (
+            "application/json", "gzip", "public, max-age=3600")
+        assert doc["profile"] == dt
+        assert set(doc["stations"]) == {"1"}
+        assert all(len(a) == SLOTS_PER_DAY for a in doc["stations"]["1"].values())
+    _, mon = _read_public(public_container, "mon")
     assert mon["stations"]["1"]["bikes"][32] == 6.0
-    _, meta = _read_public(public_container, "meta")
+    settings, meta = _read_public(public_container, "meta")
+    assert settings.content_encoding == "gzip"
+    assert list(meta["profiles"]) == list(DAY_TYPES)
     assert meta["stations"][0]["name"] == "PREŠERNOV TRG"
 
 
@@ -1316,12 +1373,12 @@ def test_run_failure_leaves_existing_public_files_untouched(azurite_container, p
     assert mon == {"old": True}
 ```
 
-- [ ] **Step 3: Run to verify failure**
+- [ ] **Step 4: Run to verify failure**
 
 Run: `REQUIRE_AZURITE=1 pytest tests/test_build_typical.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'bicikelj_log.build_typical'`
 
-- [ ] **Step 4: Implement**
+- [ ] **Step 5: Implement**
 
 Create `src/bicikelj_log/build_typical.py`:
 
@@ -1339,14 +1396,9 @@ from .daytypes import DAY_TYPES
 from .log import log
 from .storage import BlobStore, PublicStore
 from .typical import (
-    TZ, WINDOW_DAYS, SlotAccumulator, build_profiles, has_any_value,
-    meta_document, profile_document, station_list,
+    TZ, SlotAccumulator, build_profiles, has_any_value, meta_document,
+    profile_document, station_list, window_days,
 )
-
-
-def window_days(today: date) -> list[date]:
-    """Local days [today-WINDOW_DAYS, today-1], oldest first."""
-    return [today - timedelta(days=i) for i in range(WINDOW_DAYS, 0, -1)]
 
 
 def utc_file_days(local_days: list[date]) -> list[date]:
@@ -1366,9 +1418,9 @@ def run(raw: BlobStore, public: PublicStore, *, now: datetime) -> int:
         for d in utc_file_days(days):
             data = raw.read_status(d)
             if data is not None:
+                stats["window_days_found"] += 1  # day files found (spec: missing files are skipped)
                 acc.add_lines(data.splitlines())
         daily = acc.daily_values()
-        stats["window_days_found"] = len({day for (_, day, _) in daily if days[0] <= day <= days[-1]})
         stations = station_list(raw.latest_station_info())
         stats["stations"] = len(stations)
         profiles = build_profiles(daily, today)
@@ -1404,12 +1456,12 @@ if __name__ == "__main__":
     sys.exit(main())
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [ ] **Step 6: Run tests to verify they pass**
 
 Run: `REQUIRE_AZURITE=1 pytest -v`
 Expected: all pass (67 total)
 
-- [ ] **Step 6: Smoke-run locally against Azurite**
+- [ ] **Step 7: Smoke-run locally against Azurite**
 
 ```bash
 export AZURE_STORAGE_CONNECTION_STRING="UseDevelopmentStorage=true"
@@ -1420,10 +1472,10 @@ python -m bicikelj_log.build_typical
 
 Expected: the second command logs one JSON line with `"ok":false` and `"error":"no usable data in window; nothing published"`, because only today's data exists (the job never uses today). This is the correct first-run behaviour.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-git add src/bicikelj_log/log.py src/bicikelj_log/__main__.py src/bicikelj_log/build_typical.py tests/test_build_typical.py
+git add src/bicikelj_log/log.py src/bicikelj_log/__main__.py src/bicikelj_log/build_typical.py tests/conftest.py tests/test_build_typical.py
 git commit -m "feat: build_typical daily job entrypoint"
 ```
 
