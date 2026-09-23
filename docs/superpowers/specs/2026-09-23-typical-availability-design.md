@@ -169,9 +169,9 @@ Same package and image as step 1; existing flat module layout.
 - `build_typical.py` — entrypoint `python -m bicikelj_log.build_typical`:
   compute window from the local run date, read blobs, call `typical.py`,
   publish, log one structured line. Mirrors `__main__.py`'s shape.
-- `storage.py` — add: read a day's status blob (streamed line by line), read
-  latest station-information snapshot, and a public publisher that uploads
-  gzipped JSON with headers.
+- `storage.py` — add: read a day's status blob (one ~5 MB file at a time, so
+  memory is bounded by one file), read the latest station-information
+  snapshot, and a public publisher that uploads gzipped JSON with headers.
 - `config.py` — add `BICIKELJ_PUBLIC_ACCOUNT_URL` (managed identity, like the
   raw account) and `BICIKELJ_PUBLIC_CONTAINER` (default `typical`). When
   `AZURE_STORAGE_CONNECTION_STRING` is set (Azurite/local), both the raw and the
