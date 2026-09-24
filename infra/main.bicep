@@ -19,6 +19,9 @@ param cronExpression string = '*/5 * * * *'
 @description('Storage account name (must be globally unique, 3-24 lowercase alphanumeric chars)')
 param storageAccountName string = 'bicikelj${uniqueString(resourceGroup().id)}'
 
+@description('Email address notified when the container job fails')
+param alertEmailAddress string
+
 var storageBlobDataContributorRoleId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
 
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
@@ -120,6 +123,67 @@ resource blobDataContributor 'Microsoft.Authorization/roleAssignments@2022-04-01
     principalId: job.identity.principalId
     principalType: 'ServicePrincipal'
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDataContributorRoleId)
+  }
+}
+
+resource alertActionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
+  name: '${jobName}-alerts'
+  location: 'global'
+  properties: {
+    groupShortName: 'bicikelj'
+    enabled: true
+    emailReceivers: [
+      {
+        name: 'owner'
+        emailAddress: alertEmailAddress
+        useCommonAlertSchema: true
+      }
+    ]
+  }
+}
+
+resource jobFailureAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = {
+  name: '${jobName}-failed-execution-alert'
+  location: 'global'
+  properties: {
+    description: 'Fires when the ${jobName} container job has a failed execution. Evaluated hourly and auto-resolves, so at most ~1-2 emails/hour during a sustained outage.'
+    severity: 2
+    enabled: true
+    scopes: [
+      job.id
+    ]
+    evaluationFrequency: 'PT1H'
+    windowSize: 'PT1H'
+    targetResourceType: 'Microsoft.App/jobs'
+    criteria: {
+      'odata.type': 'Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria'
+      allOf: [
+        {
+          criterionType: 'StaticThresholdCriterion'
+          name: 'FailedExecutions'
+          metricName: 'Executions'
+          metricNamespace: 'Microsoft.App/jobs'
+          dimensions: [
+            {
+              name: 'state'
+              operator: 'Include'
+              values: [
+                'Failed'
+              ]
+            }
+          ]
+          operator: 'GreaterThanOrEqual'
+          threshold: 1
+          timeAggregation: 'Total'
+        }
+      ]
+    }
+    autoMitigate: true
+    actions: [
+      {
+        actionGroupId: alertActionGroup.id
+      }
+    ]
   }
 }
 

@@ -31,11 +31,16 @@ workflow (`workflow_dispatch`, manual trigger only — it never runs on push).
 3. One-time: create an Azure AD app registration with a federated credential for
    this repo's GitHub Actions OIDC, grant it Contributor + User Access Administrator
    on the target resource group, and set `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`,
-   `AZURE_SUBSCRIPTION_ID` as repo secrets.
+   `AZURE_SUBSCRIPTION_ID`, `ALERT_EMAIL` (address to notify on job failures) as
+   repo secrets.
 4. Run the `deploy` workflow from the Actions tab (Run workflow), passing the
    resource group name.
 5. Manual test run: `az containerapp job start -n bicikelj-log-job -g bicikelj-rg`.
 6. Verify blobs appear under `status/YYYY/MM/DD.jsonl` in the storage account.
+
+A failed job execution emails `ALERT_EMAIL` via an Azure Monitor alert on the job's
+`Executions` metric. The alert evaluates hourly and auto-resolves, so a sustained
+outage sends at most ~1-2 emails/hour rather than one per failed 5-minute run.
 
 Region is pinned to `germanywestcentral` (subscription policy).
 

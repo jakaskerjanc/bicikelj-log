@@ -44,7 +44,7 @@ jobs:
           fi
       - name: Deploy Bicep
         run: |
-          params=(location="${{ inputs.location }}")
+          params=(location="${{ inputs.location }}" alertEmailAddress="${{ secrets.ALERT_EMAIL }}")
           if [ -n "${{ inputs.storageAccountName }}" ]; then
             params+=(storageAccountName="${{ inputs.storageAccountName }}")
           fi
