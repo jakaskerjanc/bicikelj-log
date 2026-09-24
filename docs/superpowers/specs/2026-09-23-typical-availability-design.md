@@ -97,9 +97,18 @@ Priors:
 
 With no holiday data yet, `holiday` equals `sun` exactly.
 
+The group priors deliberately include the day type's own days (a Monday counts
+in both `x_mon` and the weekday prior). This is the variant that was
+backtested; leave-one-type-out is not an improvement to make silently.
+
 `days_used` for a profile = Σ w over the days of that type in the window that
 have any usable data (not per slot; a day with no data at all, e.g. a logger
 outage, adds nothing). It grows ~1/week and saturates near 4.3 at 8 weeks.
+
+`days_used` is system-wide: a day counts if *any* station reported. A newly
+added station therefore inherits the system's `days_used` and is not flagged as
+"limited data" (its values are shrunk towards its own group prior). A
+per-station field can be added to `v1` later without breaking consumers.
 
 ### Worked example (golden test)
 
@@ -172,8 +181,8 @@ Same package and image as step 1; existing flat module layout.
 - `build_typical.py` — entrypoint `python -m bicikelj_log.build_typical`:
   compute window from the local run date, read blobs, call `typical.py`,
   publish, log one structured line. Mirrors `__main__.py`'s shape.
-- `storage.py` — add: read a day's status blob (one ~5 MB file at a time, so
-  memory is bounded by one file), read the latest station-information
+- `storage.py` — add: read a day's status blob (one ~5 MB file at a time; the
+  whole window's aggregates, ~0.5 M station-day-slot entries, stay in memory), read the latest station-information
   snapshot, and a public publisher that uploads gzipped JSON with headers.
 - `config.py` — add `BICIKELJ_PUBLIC_ACCOUNT_URL` (managed identity, like the
   raw account) and `BICIKELJ_PUBLIC_CONTAINER` (default `typical`). When
@@ -194,6 +203,10 @@ Same package and image as step 1; existing flat module layout.
 - Managed identity: **Storage Blob Data Reader** on the raw account,
   **Storage Blob Data Contributor** on the public account.
 - Manual run after deploy: `az containerapp job start -n bicikelj-typical-job -g bicikelj-rg`.
+  After the *first* deploy, wait ~5 min: new role assignments take time to
+  propagate, and an early 403 (plus a failure-alert email) is not a bug.
+- The job never creates the raw container (it holds only Reader there); the
+  public container is created by Bicep, not by code.
 - Log line: `{ts, ok, window_days_found, stations, rows_read, bad_lines, duration_ms, error}`.
 - Failed executions email `ALERT_EMAIL`, same as the poller job: a second
   `Microsoft.Insights/metricAlerts` scoped to `bicikelj-typical-job`, reusing the

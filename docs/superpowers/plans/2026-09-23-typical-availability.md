@@ -149,7 +149,7 @@ def day_type(day: date) -> str:
 - [ ] **Step 5: Run test to verify it passes**
 
 Run: `pytest tests/test_daytypes.py -v`
-Expected: 4 passed
+Expected: all tests in the file pass
 
 - [ ] **Step 6: Commit**
 
@@ -321,7 +321,7 @@ def local_slot(ts: int) -> tuple[date, int]:
     return t.date(), (t.hour * 60 + t.minute) // SLOT_MINUTES
 
 
-@dataclass
+@dataclass(slots=True)  # ~0.5 M instances for the whole window; slots halve memory
 class _SlotSums:
     bikes: float = 0.0
     docks: float = 0.0
@@ -377,7 +377,7 @@ class SlotAccumulator:
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/test_typical.py -v`
-Expected: 8 passed
+Expected: all tests in the file pass
 
 - [ ] **Step 5: Commit**
 
@@ -607,7 +607,7 @@ def build_profiles(daily: DailySlots, build_date: date) -> dict[str, Profile]:
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/test_typical.py -v`
-Expected: 18 passed (the golden test must give 9.57)
+Expected: all tests in the file pass (the golden test must give 9.57)
 
 - [ ] **Step 5: Commit**
 
@@ -783,7 +783,7 @@ def has_any_value(docs: Iterable[dict]) -> bool:
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/test_typical.py -v`
-Expected: 22 passed
+Expected: all tests in the file pass
 
 - [ ] **Step 5: Commit**
 
@@ -808,8 +808,9 @@ git commit -m "feat: profile and meta JSON documents for the public contract"
   - `public_blob_path(name: str) -> str` → `"v1/<name>.json"`
   - `BlobStore.read_status(day: date) -> bytes | None`
   - `BlobStore.latest_station_info() -> dict` (raises `ValueError` if no snapshot)
-  - `PublicStore(container_client)`, `PublicStore.from_config(config) -> PublicStore` (raises `ValueError` mentioning `BICIKELJ_PUBLIC_ACCOUNT_URL` if neither it nor a connection string is set), `PublicStore.publish_json(name: str, doc: dict) -> None`
-  - `_container_client(connection_string, account_url, container) -> ContainerClient` — shared factory; tolerates 409 (exists) **and 403** on `create_container()`. The typical job holds only *Storage Blob Data Reader* on the raw account, and Azure checks permissions before existence, so it gets 403, not 409, for the existing container.
+  - `BlobStore.from_config(config, *, create: bool = True)` — the poller keeps the default; the typical job passes `create=False`.
+  - `PublicStore(container_client)`, `PublicStore.from_config(config) -> PublicStore` (raises `ValueError` mentioning `BICIKELJ_PUBLIC_ACCOUNT_URL` if neither it nor a connection string is set; creates the container only with a connection string, i.e. Azurite — in Azure, Bicep creates it), `PublicStore.publish_json(name: str, doc: dict) -> None`
+  - `_container_client(connection_string, account_url, container, *, create: bool) -> ContainerClient` — shared factory; calls `create_container()` (tolerating 409) only when `create` is true. The typical job holds only *Storage Blob Data Reader* on the raw account, where `create_container()` would get 403, so it must never call it.
 
 - [ ] **Step 1: Write the failing config tests**
 
@@ -872,7 +873,7 @@ In `from_env`, replace the `return cls(...)` call with:
 ```
 
 Run: `pytest tests/test_config.py -v`
-Expected: 5 passed
+Expected: all tests in the file pass
 
 - [ ] **Step 4: Write the failing storage tests**
 
@@ -949,45 +950,46 @@ def test_public_store_requires_account_url_without_connection_string():
         PublicStore.from_config(cfg)
 
 
-def _http_error(status: int):
-    from azure.core.exceptions import HttpResponseError
-
-    class Resp:
-        status_code = status
-        reason = "err"
-        headers = {}
-
-        def text(self):
-            return ""
-
-    return HttpResponseError(response=Resp())
-
-
-def test_container_factory_tolerates_403_on_create(monkeypatch):
+def _forbid_create(monkeypatch):
     from azure.storage.blob import ContainerClient
 
-    from bicikelj_log import storage
+    def fail(self, *a, **kw):
+        raise AssertionError("create_container must not be called")
 
-    def forbidden(self, *a, **kw):
-        raise _http_error(403)
-
-    monkeypatch.setattr(ContainerClient, "create_container", forbidden)
-    cc = storage._container_client("UseDevelopmentStorage=true", None, "bicikelj")
-    assert cc.container_name == "bicikelj"
+    monkeypatch.setattr(ContainerClient, "create_container", fail)
 
 
-def test_container_factory_reraises_other_errors(monkeypatch):
-    from azure.core.exceptions import HttpResponseError
+def test_read_only_blob_store_never_creates_container(monkeypatch):
+    from bicikelj_log.config import Config
+
+    _forbid_create(monkeypatch)
+    cfg = Config(container="c", gbfs_base_url="https://x/", account_url=None,
+                 connection_string="UseDevelopmentStorage=true")
+    BlobStore.from_config(cfg, create=False)
+
+
+def test_public_store_in_azure_never_creates_container(monkeypatch):
+    from bicikelj_log.config import Config
+
+    _forbid_create(monkeypatch)
+    cfg = Config(container="c", gbfs_base_url="https://x/", account_url="https://raw.blob.core.windows.net",
+                 connection_string=None, public_account_url="https://pub.blob.core.windows.net")
+    PublicStore.from_config(cfg)  # DefaultAzureCredential() is lazy: no network here
+
+
+def test_public_store_creates_container_on_azurite(azurite_container):
     from azure.storage.blob import ContainerClient
 
-    from bicikelj_log import storage
+    from bicikelj_log.config import Config
+    from tests.conftest import AZURITE_CONN
 
-    def broken(self, *a, **kw):
-        raise _http_error(500)
-
-    monkeypatch.setattr(ContainerClient, "create_container", broken)
-    with pytest.raises(HttpResponseError):
-        storage._container_client("UseDevelopmentStorage=true", None, "bicikelj")
+    name = "pub-" + azurite_container.container_name[-12:]
+    cfg = Config(container="c", gbfs_base_url="https://x/", account_url=None,
+                 connection_string=AZURITE_CONN, public_container=name)
+    try:
+        PublicStore.from_config(cfg).publish_json("mon", {"v": 1})
+    finally:
+        ContainerClient.from_connection_string(AZURITE_CONN, name).delete_container()
 ```
 
 - [ ] **Step 5: Run to verify failure**
@@ -997,14 +999,14 @@ Expected: FAIL — `ImportError: cannot import name 'PublicStore'`
 
 - [ ] **Step 6: Implement storage**
 
-Replace `src/bicikelj_log/storage.py` with (the existing `append_status` / `write_station_info_if_absent` bodies are unchanged; `from_config` now uses a shared factory):
+Replace `src/bicikelj_log/storage.py` with (the existing `append_status` / `write_station_info_if_absent` bodies are unchanged; `from_config` now uses a shared factory and gains `create`):
 
 ```python
 import gzip
 import json
 from datetime import date
 
-from azure.core.exceptions import HttpResponseError, ResourceExistsError, ResourceNotFoundError
+from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
 from azure.storage.blob import ContainerClient, ContentSettings
 
 from .config import Config
@@ -1030,7 +1032,9 @@ def public_blob_path(name: str) -> str:
     return f"{PUBLIC_PREFIX}{name}.json"
 
 
-def _container_client(connection_string: str | None, account_url: str | None, container: str) -> ContainerClient:
+def _container_client(
+    connection_string: str | None, account_url: str | None, container: str, *, create: bool
+) -> ContainerClient:
     if connection_string:
         cc = ContainerClient.from_connection_string(connection_string, container)
     else:
@@ -1041,15 +1045,13 @@ def _container_client(connection_string: str | None, account_url: str | None, co
             container_name=container,
             credential=DefaultAzureCredential(),
         )
-    try:
-        cc.create_container()
-    except ResourceExistsError:
-        pass
-    except HttpResponseError as e:
-        # Read-only identities (the typical job on the raw account) get 403 on
-        # create even when the container exists; reads will surface real problems.
-        if e.status_code != 403:
-            raise
+    if create:
+        # Read-only identities (the typical job on the raw account) must pass
+        # create=False: Azure answers 403, not 409, for an existing container.
+        try:
+            cc.create_container()
+        except ResourceExistsError:
+            pass
     return cc
 
 
@@ -1058,8 +1060,8 @@ class BlobStore:
         self._cc = container_client
 
     @classmethod
-    def from_config(cls, config: Config) -> "BlobStore":
-        return cls(_container_client(config.connection_string, config.account_url, config.container))
+    def from_config(cls, config: Config, *, create: bool = True) -> "BlobStore":
+        return cls(_container_client(config.connection_string, config.account_url, config.container, create=create))
 
     def append_status(self, day: date, data: bytes) -> None:
         blob = self._cc.get_blob_client(status_blob_path(day))
@@ -1103,7 +1105,9 @@ class PublicStore:
     def from_config(cls, config: Config) -> "PublicStore":
         if not config.connection_string and not config.public_account_url:
             raise ValueError("Set BICIKELJ_PUBLIC_ACCOUNT_URL or AZURE_STORAGE_CONNECTION_STRING")
-        return cls(_container_client(config.connection_string, config.public_account_url, config.public_container))
+        # In Azure, Bicep creates the container (with public access); only Azurite needs it created here.
+        return cls(_container_client(config.connection_string, config.public_account_url,
+                                     config.public_container, create=bool(config.connection_string)))
 
     def publish_json(self, name: str, doc: dict) -> None:
         body = gzip.compress(json.dumps(doc, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))
@@ -1115,7 +1119,7 @@ class PublicStore:
 - [ ] **Step 7: Run tests to verify they pass**
 
 Run: `REQUIRE_AZURITE=1 pytest -v`
-Expected: all pass (test_storage: 11 passed; everything else still green)
+Expected: all pass, 0 skipped
 
 - [ ] **Step 8: Commit**
 
@@ -1169,7 +1173,7 @@ from .log import log
 and rename the three `_log(` calls in `run_once` and `main` to `log(`. (`import json` stays; it is still used for `json.dumps(info_feed, ...)`.)
 
 Run: `pytest tests/test_main.py -v`
-Expected: 3 passed
+Expected: all tests in the file pass
 
 - [ ] **Step 2: Add a second-container fixture**
 
@@ -1443,7 +1447,7 @@ def main() -> int:
     now = datetime.now(timezone.utc)
     try:
         config = Config.from_env()
-        raw = BlobStore.from_config(config)
+        raw = BlobStore.from_config(config, create=False)  # Reader role only on the raw account
         public = PublicStore.from_config(config)
     except Exception as e:  # noqa: BLE001 - config/auth setup failed before run's guard
         log(ts=now.isoformat(), ok=False, window_days_found=0, stations=0, rows_read=0,
@@ -1459,7 +1463,7 @@ if __name__ == "__main__":
 - [ ] **Step 6: Run tests to verify they pass**
 
 Run: `REQUIRE_AZURITE=1 pytest -v`
-Expected: all pass (67 total)
+Expected: all pass, 0 skipped
 
 - [ ] **Step 7: Smoke-run locally against Azurite**
 
@@ -1742,6 +1746,9 @@ The exact base URL is the `publicBaseUrl` deployment output. In Azure it runs as
 ```bash
 az containerapp job start -n bicikelj-typical-job -g bicikelj-rg
 ```
+
+After the first deploy, wait ~5 minutes before this: new role assignments take time to
+propagate, and an early 403 (and failure-alert email) is not a bug.
 
 Locally (Azurite) both containers live in the dev account:
 
