@@ -146,14 +146,14 @@ resource jobFailureAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = {
   name: '${jobName}-failed-execution-alert'
   location: 'global'
   properties: {
-    description: 'Fires when the ${jobName} container job has a failed execution. Evaluated hourly and auto-resolves, so at most ~1-2 emails/hour during a sustained outage.'
+    description: 'Fires when the ${jobName} container job has a failed execution. Stateful (auto-resolves), so one email per incident plus a resolved notice.'
     severity: 2
     enabled: true
     scopes: [
       job.id
     ]
-    evaluationFrequency: 'PT1H'
-    windowSize: 'PT1H'
+    evaluationFrequency: 'PT5M'
+    windowSize: 'PT15M'
     targetResourceType: 'Microsoft.App/jobs'
     criteria: {
       'odata.type': 'Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria'

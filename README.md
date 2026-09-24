@@ -39,13 +39,14 @@ workflow (`workflow_dispatch`, manual trigger only — it never runs on push).
 6. Verify blobs appear under `status/YYYY/MM/DD.jsonl` in the storage account.
 
 A failed job execution emails `ALERT_EMAIL` via an Azure Monitor alert on the job's
-`Executions` metric. The alert evaluates hourly and auto-resolves, so a sustained
-outage sends at most ~1-2 emails/hour rather than one per failed 5-minute run.
+`Executions` metric. The alert is stateful (auto-resolves), so a sustained outage
+sends one email when it fires and one when it resolves, not one per failed run.
 
-Region is pinned to `germanywestcentral` (subscription policy).
+Region defaults to `francecentral`: subscription policy allows only a few EU regions,
+and `germanywestcentral` hits the Container Apps environment quota.
 
 To preview or apply changes locally instead of via CI:
 
 ```bash
-az deployment group create -g bicikelj-rg -f infra/main.bicep
+az deployment group create -g bicikelj-rg -f infra/main.bicep -p alertEmailAddress=you@example.com
 ```

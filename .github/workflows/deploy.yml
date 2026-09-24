@@ -31,7 +31,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       - name: Register required resource providers
         run: |
-          for ns in Microsoft.App Microsoft.OperationalInsights Microsoft.ManagedIdentity Microsoft.Storage Microsoft.Authorization; do
+          for ns in Microsoft.App Microsoft.OperationalInsights Microsoft.ManagedIdentity Microsoft.Storage Microsoft.Authorization Microsoft.Insights; do
             state=$(az provider show --namespace "$ns" --query registrationState -o tsv)
             if [ "$state" != "Registered" ]; then
               az provider register --namespace "$ns" --wait
@@ -43,8 +43,14 @@ jobs:
             az group create -n "${{ inputs.resourceGroup }}" -l "${{ inputs.location }}"
           fi
       - name: Deploy Bicep
+        env:
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
         run: |
-          params=(location="${{ inputs.location }}" alertEmailAddress="${{ secrets.ALERT_EMAIL }}")
+          if [ -z "$ALERT_EMAIL" ]; then
+            echo "::error::ALERT_EMAIL repo secret is not set"
+            exit 1
+          fi
+          params=(location="${{ inputs.location }}" alertEmailAddress="$ALERT_EMAIL")
           if [ -n "${{ inputs.storageAccountName }}" ]; then
             params+=(storageAccountName="${{ inputs.storageAccountName }}")
           fi
