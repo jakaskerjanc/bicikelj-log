@@ -18,7 +18,9 @@ sensible results with only ~1 week of history and improve as data accumulates.
 - Weather. Evaluated and deferred (see "Research notes"); can be layered on
   later as a forecast without changing this design.
 - Frontend / map UI — separate project; this spec defines the data contract.
-- Per-calendar-date output, alerting, CDN, parameter-tuning backtest tooling.
+- Per-calendar-date output, product-facing station alerting (e.g. "notify me when
+  this station has bikes"), CDN, parameter-tuning backtest tooling. (Job-failure
+  ops monitoring is in scope — see "Job and schedule".)
 
 ## Research notes (why this formula)
 
@@ -193,6 +195,11 @@ Same package and image as step 1; existing flat module layout.
   **Storage Blob Data Contributor** on the public account.
 - Manual run after deploy: `az containerapp job start -n bicikelj-typical-job -g bicikelj-rg`.
 - Log line: `{ts, ok, window_days_found, stations, rows_read, bad_lines, duration_ms, error}`.
+- Failed executions email `ALERT_EMAIL`, same as the poller job: a second
+  `Microsoft.Insights/metricAlerts` scoped to `bicikelj-typical-job`, reusing the
+  existing action group from "feat: email alert on container job failure" (no new
+  operational surface — the "alerting" non-goal above is about product-facing
+  station alerts, not job-failure ops monitoring).
 
 ## Storage and serving
 

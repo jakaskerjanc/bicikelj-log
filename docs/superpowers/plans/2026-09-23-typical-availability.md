@@ -1489,7 +1489,7 @@ git commit -m "feat: build_typical daily job entrypoint"
 
 **Interfaces:**
 - Consumes: entrypoint `python -m bicikelj_log.build_typical`; env vars `BICIKELJ_STORAGE_ACCOUNT_URL`, `BICIKELJ_CONTAINER`, `BICIKELJ_PUBLIC_ACCOUNT_URL`, `BICIKELJ_PUBLIC_CONTAINER` (Task 5).
-- Produces: Bicep outputs `typicalJobName`, `publicBaseUrl`.
+- Produces: Bicep outputs `typicalJobName`, `publicBaseUrl`. Reuses the existing `alertActionGroup` (see "feat: email alert on container job failure") so a failed `typicalJob` execution emails `alertEmailAddress` the same way a failed poller-job execution already does.
 
 - [ ] **Step 1: Add parameters and role ID**
 
@@ -1637,6 +1637,51 @@ resource typicalPublicContributor 'Microsoft.Authorization/roleAssignments@2022-
   }
 }
 
+resource typicalJobFailureAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = {
+  name: '${typicalJobName}-failed-execution-alert'
+  location: 'global'
+  properties: {
+    description: 'Fires when the ${typicalJobName} container job has a failed execution. Stateful (auto-resolves), so one email per incident plus a resolved notice.'
+    severity: 2
+    enabled: true
+    scopes: [
+      typicalJob.id
+    ]
+    evaluationFrequency: 'PT5M'
+    windowSize: 'PT15M'
+    targetResourceType: 'Microsoft.App/jobs'
+    criteria: {
+      'odata.type': 'Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria'
+      allOf: [
+        {
+          criterionType: 'StaticThresholdCriterion'
+          name: 'FailedExecutions'
+          metricName: 'Executions'
+          metricNamespace: 'Microsoft.App/jobs'
+          dimensions: [
+            {
+              name: 'state'
+              operator: 'Include'
+              values: [
+                'Failed'
+              ]
+            }
+          ]
+          operator: 'GreaterThanOrEqual'
+          threshold: 1
+          timeAggregation: 'Total'
+        }
+      ]
+    }
+    autoMitigate: true
+    actions: [
+      {
+        actionGroupId: alertActionGroup.id
+      }
+    ]
+  }
+}
+
 ```
 
 Append at the end of the file (after `output jobName ...`):
@@ -1665,6 +1710,16 @@ In `README.md`, change the intro paragraph to:
 Polls the BicikeLJ GBFS feed every 5 minutes and appends per-station availability
 to Azure Blob Storage (step 1), and rebuilds "typical availability" profiles once a
 day from that history (step 2, see `docs/superpowers/specs/2026-09-23-typical-availability-design.md`).
+```
+
+Change the existing alert paragraph (added in "feat: email alert on container job failure") from "A failed job execution" to cover both jobs:
+
+```markdown
+A failed execution of either job (`bicikelj-log-job` or `bicikelj-typical-job`) emails
+`ALERT_EMAIL` via an Azure Monitor alert on that job's `Executions` metric. Each job has
+its own alert, but both notify the same action group, so no extra deploy parameters are
+needed. The alerts are stateful (auto-resolve), so a sustained outage sends one email
+when it fires and one when it resolves, not one per failed run.
 ```
 
 Add after the "Run one poll locally (against Azurite)" section:
