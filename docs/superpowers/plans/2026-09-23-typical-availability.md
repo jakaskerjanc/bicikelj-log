@@ -8,6 +8,8 @@
 
 **Tech Stack:** Python 3.12 stdlib (`zoneinfo`, `json`, `gzip`), `azure-storage-blob`, `azure-identity`, new dep `holidays`; pytest + Azurite; Bicep.
 
+**Paths:** all paths and commands are relative to the repo root; the Python project lives in `backend/` (see `2026-09-24-backend-folder-layout.md`).
+
 **Spec:** `docs/superpowers/specs/2026-09-23-typical-availability-design.md` — read it before starting; it holds the formula, output contract, and rationale.
 
 ## Global Constraints
@@ -36,10 +38,10 @@
 
 ```bash
 python -m venv .venv && . .venv/bin/activate
-pip install -e ".[dev]"
+pip install -e "./backend[dev]"
 docker run -d --rm --name azurite -p 10000:10000 mcr.microsoft.com/azure-storage/azurite \
   azurite-blob --blobHost 0.0.0.0 --skipApiVersionCheck
-REQUIRE_AZURITE=1 pytest -q   # expect: all existing tests pass
+REQUIRE_AZURITE=1 pytest backend -q   # expect: all existing tests pass
 ```
 
 `REQUIRE_AZURITE=1` makes Azurite-backed tests fail (instead of skip) if the emulator is not reachable.
@@ -48,26 +50,26 @@ REQUIRE_AZURITE=1 pytest -q   # expect: all existing tests pass
 
 | File | Responsibility |
 |---|---|
-| Create `src/bicikelj_log/daytypes.py` | `day_type(date)` + day-type name tuples |
-| Create `src/bicikelj_log/typical.py` | All math: slotting, accumulation, weights, shrinkage, profiles, documents |
-| Create `src/bicikelj_log/log.py` | One-line structured JSON log shared by both entrypoints |
-| Create `src/bicikelj_log/build_typical.py` | Daily job entrypoint: window, read, compute, publish, log |
-| Modify `src/bicikelj_log/config.py` | Public account URL + container settings |
-| Modify `src/bicikelj_log/storage.py` | Raw reads, shared client factory, `PublicStore` |
-| Modify `src/bicikelj_log/__main__.py` | Use shared `log.py` |
-| Modify `pyproject.toml` | Add `holidays` |
+| Create `backend/src/bicikelj_log/daytypes.py` | `day_type(date)` + day-type name tuples |
+| Create `backend/src/bicikelj_log/typical.py` | All math: slotting, accumulation, weights, shrinkage, profiles, documents |
+| Create `backend/src/bicikelj_log/log.py` | One-line structured JSON log shared by both entrypoints |
+| Create `backend/src/bicikelj_log/build_typical.py` | Daily job entrypoint: window, read, compute, publish, log |
+| Modify `backend/src/bicikelj_log/config.py` | Public account URL + container settings |
+| Modify `backend/src/bicikelj_log/storage.py` | Raw reads, shared client factory, `PublicStore` |
+| Modify `backend/src/bicikelj_log/__main__.py` | Use shared `log.py` |
+| Modify `backend/pyproject.toml` | Add `holidays` |
 | Modify `infra/main.bicep` | Public account, CORS, container, typical job, role assignments |
 | Modify `README.md` | Document the new job and public URLs |
-| Tests | `tests/test_daytypes.py`, `tests/test_typical.py`, `tests/test_build_typical.py` (new); `tests/test_config.py`, `tests/test_storage.py`, `tests/conftest.py` (extend) |
+| Tests | `backend/tests/test_daytypes.py`, `backend/tests/test_typical.py`, `backend/tests/test_build_typical.py` (new); `backend/tests/test_config.py`, `backend/tests/test_storage.py`, `backend/tests/conftest.py` (extend) |
 
 ---
 
 ### Task 1: Day types
 
 **Files:**
-- Modify: `pyproject.toml`
-- Create: `src/bicikelj_log/daytypes.py`
-- Test: `tests/test_daytypes.py`
+- Modify: `backend/pyproject.toml`
+- Create: `backend/src/bicikelj_log/daytypes.py`
+- Test: `backend/tests/test_daytypes.py`
 
 **Interfaces:**
 - Consumes: nothing.
@@ -75,7 +77,7 @@ REQUIRE_AZURITE=1 pytest -q   # expect: all existing tests pass
 
 - [ ] **Step 1: Add the dependency**
 
-In `pyproject.toml`, change the `dependencies` list to:
+In `backend/pyproject.toml`, change the `dependencies` list to:
 
 ```toml
 dependencies = [
@@ -86,12 +88,12 @@ dependencies = [
 ]
 ```
 
-Run: `pip install -e ".[dev]"`
+Run: `pip install -e "./backend[dev]"`
 Expected: installs `holidays`.
 
 - [ ] **Step 2: Write the failing test**
 
-Create `tests/test_daytypes.py`:
+Create `backend/tests/test_daytypes.py`:
 
 ```python
 from datetime import date
@@ -120,12 +122,12 @@ def test_holiday_on_weekend_is_holiday():
 
 - [ ] **Step 3: Run test to verify it fails**
 
-Run: `pytest tests/test_daytypes.py -v`
+Run: `pytest backend/tests/test_daytypes.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'bicikelj_log.daytypes'`
 
 - [ ] **Step 4: Implement**
 
-Create `src/bicikelj_log/daytypes.py`:
+Create `backend/src/bicikelj_log/daytypes.py`:
 
 ```python
 from datetime import date
@@ -148,13 +150,13 @@ def day_type(day: date) -> str:
 
 - [ ] **Step 5: Run test to verify it passes**
 
-Run: `pytest tests/test_daytypes.py -v`
+Run: `pytest backend/tests/test_daytypes.py -v`
 Expected: all tests in the file pass
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add pyproject.toml src/bicikelj_log/daytypes.py tests/test_daytypes.py
+git add backend/pyproject.toml backend/src/bicikelj_log/daytypes.py backend/tests/test_daytypes.py
 git commit -m "feat: Slovenian day-type calendar for typical profiles"
 ```
 
@@ -163,8 +165,8 @@ git commit -m "feat: Slovenian day-type calendar for typical profiles"
 ### Task 2: Slotting and per-day slot accumulation
 
 **Files:**
-- Create: `src/bicikelj_log/typical.py`
-- Test: `tests/test_typical.py`
+- Create: `backend/src/bicikelj_log/typical.py`
+- Test: `backend/tests/test_typical.py`
 
 **Interfaces:**
 - Consumes: `DAY_TYPES`, `WEEKDAY_TYPES`, `day_type` from Task 1 (imported now, used in Task 3).
@@ -178,7 +180,7 @@ git commit -m "feat: Slovenian day-type calendar for typical profiles"
 
 - [ ] **Step 1: Write the failing tests**
 
-Create `tests/test_typical.py`:
+Create `backend/tests/test_typical.py`:
 
 ```python
 import json
@@ -268,12 +270,12 @@ def test_accumulator_skips_bad_and_blank_lines():
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `pytest tests/test_typical.py -v`
+Run: `pytest backend/tests/test_typical.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'bicikelj_log.typical'`
 
 - [ ] **Step 3: Implement**
 
-Create `src/bicikelj_log/typical.py` (the import block already includes what Tasks 3–4 need):
+Create `backend/src/bicikelj_log/typical.py` (the import block already includes what Tasks 3–4 need):
 
 ```python
 """Typical-availability math. Pure functions, no I/O.
@@ -376,13 +378,13 @@ class SlotAccumulator:
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `pytest tests/test_typical.py -v`
+Run: `pytest backend/tests/test_typical.py -v`
 Expected: all tests in the file pass
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/bicikelj_log/typical.py tests/test_typical.py
+git add backend/src/bicikelj_log/typical.py backend/tests/test_typical.py
 git commit -m "feat: local-time 15-min slot accumulation of raw status rows"
 ```
 
@@ -391,8 +393,8 @@ git commit -m "feat: local-time 15-min slot accumulation of raw status rows"
 ### Task 3: Recency-weighted, shrunk profiles
 
 **Files:**
-- Modify: `src/bicikelj_log/typical.py` (append)
-- Test: `tests/test_typical.py` (extend)
+- Modify: `backend/src/bicikelj_log/typical.py` (append)
+- Test: `backend/tests/test_typical.py` (extend)
 
 **Interfaces:**
 - Consumes: `SlotValues`, `DailySlots`, constants from Task 2; `DAY_TYPES`, `WEEKDAY_TYPES`, `day_type` from Task 1.
@@ -405,7 +407,7 @@ git commit -m "feat: local-time 15-min slot accumulation of raw status rows"
 
 - [ ] **Step 1: Write the failing tests**
 
-In `tests/test_typical.py`, replace the import line
+In `backend/tests/test_typical.py`, replace the import line
 `from bicikelj_log.typical import SlotAccumulator, SlotValues, local_slot` with:
 
 ```python
@@ -415,7 +417,7 @@ from bicikelj_log.typical import (
 )
 ```
 
-Append to `tests/test_typical.py`:
+Append to `backend/tests/test_typical.py`:
 
 ```python
 def sv(bikes: float) -> SlotValues:
@@ -509,12 +511,12 @@ def test_days_outside_window_are_ignored():
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `pytest tests/test_typical.py -v`
+Run: `pytest backend/tests/test_typical.py -v`
 Expected: FAIL — `ImportError: cannot import name 'build_profiles'`
 
 - [ ] **Step 3: Implement**
 
-Append to `src/bicikelj_log/typical.py`:
+Append to `backend/src/bicikelj_log/typical.py`:
 
 ```python
 def window_days(today: date) -> list[date]:
@@ -606,13 +608,13 @@ def build_profiles(daily: DailySlots, build_date: date) -> dict[str, Profile]:
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `pytest tests/test_typical.py -v`
+Run: `pytest backend/tests/test_typical.py -v`
 Expected: all tests in the file pass (the golden test must give 9.57)
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/bicikelj_log/typical.py tests/test_typical.py
+git add backend/src/bicikelj_log/typical.py backend/tests/test_typical.py
 git commit -m "feat: recency-weighted shrinkage profiles per day type"
 ```
 
@@ -621,8 +623,8 @@ git commit -m "feat: recency-weighted shrinkage profiles per day type"
 ### Task 4: JSON documents
 
 **Files:**
-- Modify: `src/bicikelj_log/typical.py` (append)
-- Test: `tests/test_typical.py` (extend)
+- Modify: `backend/src/bicikelj_log/typical.py` (append)
+- Test: `backend/tests/test_typical.py` (extend)
 
 **Interfaces:**
 - Consumes: `Profile`, constants from Tasks 2–3.
@@ -634,7 +636,7 @@ git commit -m "feat: recency-weighted shrinkage profiles per day type"
 
 - [ ] **Step 1: Write the failing tests**
 
-In `tests/test_typical.py`, replace the import lines at the top with:
+In `backend/tests/test_typical.py`, replace the import lines at the top with:
 
 ```python
 import json
@@ -712,12 +714,12 @@ def test_has_any_value():
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `pytest tests/test_typical.py -v`
+Run: `pytest backend/tests/test_typical.py -v`
 Expected: FAIL — `ImportError: cannot import name 'has_any_value'`
 
 - [ ] **Step 3: Implement**
 
-Append to `src/bicikelj_log/typical.py`:
+Append to `backend/src/bicikelj_log/typical.py`:
 
 ```python
 def _round(field: str, values: list[float | None]) -> list[float | None]:
@@ -782,13 +784,13 @@ def has_any_value(docs: Iterable[dict]) -> bool:
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `pytest tests/test_typical.py -v`
+Run: `pytest backend/tests/test_typical.py -v`
 Expected: all tests in the file pass
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/bicikelj_log/typical.py tests/test_typical.py
+git add backend/src/bicikelj_log/typical.py backend/tests/test_typical.py
 git commit -m "feat: profile and meta JSON documents for the public contract"
 ```
 
@@ -797,9 +799,9 @@ git commit -m "feat: profile and meta JSON documents for the public contract"
 ### Task 5: Config and storage (raw reads + public publisher)
 
 **Files:**
-- Modify: `src/bicikelj_log/config.py`
-- Modify: `src/bicikelj_log/storage.py` (full replacement below; existing behaviour unchanged)
-- Test: `tests/test_config.py`, `tests/test_storage.py` (extend)
+- Modify: `backend/src/bicikelj_log/config.py`
+- Modify: `backend/src/bicikelj_log/storage.py` (full replacement below; existing behaviour unchanged)
+- Test: `backend/tests/test_config.py`, `backend/tests/test_storage.py` (extend)
 
 **Interfaces:**
 - Consumes: nothing from earlier tasks.
@@ -814,7 +816,7 @@ git commit -m "feat: profile and meta JSON documents for the public contract"
 
 - [ ] **Step 1: Write the failing config tests**
 
-Append to `tests/test_config.py`:
+Append to `backend/tests/test_config.py`:
 
 ```python
 
@@ -839,12 +841,12 @@ def test_from_env_public_defaults(monkeypatch):
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `pytest tests/test_config.py -v`
+Run: `pytest backend/tests/test_config.py -v`
 Expected: FAIL — `AttributeError: 'Config' object has no attribute 'public_account_url'`
 
 - [ ] **Step 3: Implement config**
 
-In `src/bicikelj_log/config.py`:
+In `backend/src/bicikelj_log/config.py`:
 
 After `DEFAULT_CONTAINER = "bicikelj"` add:
 
@@ -872,12 +874,12 @@ In `from_env`, replace the `return cls(...)` call with:
         )
 ```
 
-Run: `pytest tests/test_config.py -v`
+Run: `pytest backend/tests/test_config.py -v`
 Expected: all tests in the file pass
 
 - [ ] **Step 4: Write the failing storage tests**
 
-In `tests/test_storage.py`, replace the import block at the top with:
+In `backend/tests/test_storage.py`, replace the import block at the top with:
 
 ```python
 import gzip
@@ -994,12 +996,12 @@ def test_public_store_creates_container_on_azurite(azurite_container):
 
 - [ ] **Step 5: Run to verify failure**
 
-Run: `REQUIRE_AZURITE=1 pytest tests/test_storage.py -v`
+Run: `REQUIRE_AZURITE=1 pytest backend/tests/test_storage.py -v`
 Expected: FAIL — `ImportError: cannot import name 'PublicStore'`
 
 - [ ] **Step 6: Implement storage**
 
-Replace `src/bicikelj_log/storage.py` with (the existing `append_status` / `write_station_info_if_absent` bodies are unchanged; `from_config` now uses a shared factory and gains `create`):
+Replace `backend/src/bicikelj_log/storage.py` with (the existing `append_status` / `write_station_info_if_absent` bodies are unchanged; `from_config` now uses a shared factory and gains `create`):
 
 ```python
 import gzip
@@ -1118,13 +1120,13 @@ class PublicStore:
 
 - [ ] **Step 7: Run tests to verify they pass**
 
-Run: `REQUIRE_AZURITE=1 pytest -v`
+Run: `REQUIRE_AZURITE=1 pytest backend -v`
 Expected: all pass, 0 skipped
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add src/bicikelj_log/config.py src/bicikelj_log/storage.py tests/test_config.py tests/test_storage.py
+git add backend/src/bicikelj_log/config.py backend/src/bicikelj_log/storage.py backend/tests/test_config.py backend/tests/test_storage.py
 git commit -m "feat: raw status reads and gzipped public JSON publisher"
 ```
 
@@ -1133,11 +1135,11 @@ git commit -m "feat: raw status reads and gzipped public JSON publisher"
 ### Task 6: `build_typical` entrypoint
 
 **Files:**
-- Create: `src/bicikelj_log/log.py`
-- Modify: `src/bicikelj_log/__main__.py`
-- Create: `src/bicikelj_log/build_typical.py`
-- Modify: `tests/conftest.py` (add `public_container` fixture)
-- Test: `tests/test_build_typical.py`
+- Create: `backend/src/bicikelj_log/log.py`
+- Modify: `backend/src/bicikelj_log/__main__.py`
+- Create: `backend/src/bicikelj_log/build_typical.py`
+- Modify: `backend/tests/conftest.py` (add `public_container` fixture)
+- Test: `backend/tests/test_build_typical.py`
 
 **Interfaces:**
 - Consumes: `DAY_TYPES` (Task 1); `TZ`, `window_days`, `SlotAccumulator`, `build_profiles`, `has_any_value`, `meta_document`, `profile_document`, `station_list` (Tasks 2–4); `Config`, `BlobStore.read_status`, `BlobStore.latest_station_info`, `PublicStore.publish_json`, `public_blob_path` (Task 5).
@@ -1147,7 +1149,7 @@ git commit -m "feat: raw status reads and gzipped public JSON publisher"
 
 - [ ] **Step 1: Extract the shared logger**
 
-Create `src/bicikelj_log/log.py`:
+Create `backend/src/bicikelj_log/log.py`:
 
 ```python
 import json
@@ -1157,7 +1159,7 @@ def log(**fields) -> None:
     print(json.dumps(fields, separators=(",", ":")), flush=True)
 ```
 
-In `src/bicikelj_log/__main__.py`, delete the `_log` function:
+In `backend/src/bicikelj_log/__main__.py`, delete the `_log` function:
 
 ```python
 def _log(**fields) -> None:
@@ -1172,12 +1174,12 @@ from .log import log
 
 and rename the three `_log(` calls in `run_once` and `main` to `log(`. (`import json` stays; it is still used for `json.dumps(info_feed, ...)`.)
 
-Run: `pytest tests/test_main.py -v`
+Run: `pytest backend/tests/test_main.py -v`
 Expected: all tests in the file pass
 
 - [ ] **Step 2: Add a second-container fixture**
 
-In `tests/conftest.py`, append (Azurite-backed tests reach containers only via conftest fixtures):
+In `backend/tests/conftest.py`, append (Azurite-backed tests reach containers only via conftest fixtures):
 
 ```python
 
@@ -1200,7 +1202,7 @@ def public_container(azurite_container):
 
 - [ ] **Step 3: Write the failing tests**
 
-Create `tests/test_build_typical.py`:
+Create `backend/tests/test_build_typical.py`:
 
 ```python
 import gzip
@@ -1379,12 +1381,12 @@ def test_run_failure_leaves_existing_public_files_untouched(azurite_container, p
 
 - [ ] **Step 4: Run to verify failure**
 
-Run: `REQUIRE_AZURITE=1 pytest tests/test_build_typical.py -v`
+Run: `REQUIRE_AZURITE=1 pytest backend/tests/test_build_typical.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'bicikelj_log.build_typical'`
 
 - [ ] **Step 5: Implement**
 
-Create `src/bicikelj_log/build_typical.py`:
+Create `backend/src/bicikelj_log/build_typical.py`:
 
 ```python
 """Daily job: rebuild typical-availability profiles and publish them.
@@ -1462,7 +1464,7 @@ if __name__ == "__main__":
 
 - [ ] **Step 6: Run tests to verify they pass**
 
-Run: `REQUIRE_AZURITE=1 pytest -v`
+Run: `REQUIRE_AZURITE=1 pytest backend -v`
 Expected: all pass, 0 skipped
 
 - [ ] **Step 7: Smoke-run locally against Azurite**
@@ -1479,7 +1481,7 @@ Expected: the second command logs one JSON line with `"ok":false` and `"error":"
 - [ ] **Step 8: Commit**
 
 ```bash
-git add src/bicikelj_log/log.py src/bicikelj_log/__main__.py src/bicikelj_log/build_typical.py tests/conftest.py tests/test_build_typical.py
+git add backend/src/bicikelj_log/log.py backend/src/bicikelj_log/__main__.py backend/src/bicikelj_log/build_typical.py backend/tests/conftest.py backend/tests/test_build_typical.py
 git commit -m "feat: build_typical daily job entrypoint"
 ```
 
@@ -1773,13 +1775,13 @@ git commit -m "build: public profile storage + daily typical-build job in Bicep"
 
 - [ ] **Step 1: Full test suite**
 
-Run: `REQUIRE_AZURITE=1 pytest -v`
+Run: `REQUIRE_AZURITE=1 pytest backend -v`
 Expected: all pass, 0 skipped.
 
 - [ ] **Step 2: Image builds and the entrypoint imports**
 
 ```bash
-docker build -t bicikelj-log:dev .
+docker build -t bicikelj-log:dev backend
 docker run --rm bicikelj-log:dev python -c "import bicikelj_log.build_typical, holidays; print('ok')"
 ```
 
