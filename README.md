@@ -3,14 +3,21 @@
 Polls the BicikeLJ GBFS feed every 5 minutes and appends per-station availability
 to Azure Blob Storage. Step 1 of 2 (fetch & save).
 
+## Repository layout
+
+- `backend/` — Python package, tests and Dockerfile for the container jobs.
+  Commands below run from the repo root.
+- `infra/` — Bicep for all Azure resources (shared).
+- `docs/` — specs and plans.
+
 ## Local dev
 
 ```bash
-pip install -e ".[dev]"
+pip install -e "./backend[dev]"
 # start Azurite for storage tests
 docker run -d -p 10000:10000 mcr.microsoft.com/azure-storage/azurite \
   azurite-blob --blobHost 0.0.0.0
-pytest -v
+pytest backend -v
 ```
 
 ## Run one poll locally (against Azurite)

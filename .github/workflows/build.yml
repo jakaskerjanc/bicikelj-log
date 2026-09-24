@@ -2,11 +2,20 @@ name: build
 on:
   push:
     branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/build.yml"
   pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/build.yml"
 
 jobs:
   test:
     runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: backend
     services:
       azurite:
         image: mcr.microsoft.com/azure-storage/azurite
@@ -43,7 +52,7 @@ jobs:
         run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
       - uses: docker/build-push-action@v7
         with:
-          context: .
+          context: backend
           push: true
           tags: |
             ${{ env.IMAGE }}:latest
