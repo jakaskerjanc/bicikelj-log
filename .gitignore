@@ -6,3 +6,4 @@ __pycache__/
 *.local
 node_modules/
 dist/
+frontend/public/dev-data/
