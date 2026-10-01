@@ -7,6 +7,7 @@ day from that history (step 2, see `docs/superpowers/specs/2026-09-23-typical-av
 ## Repository layout
 
 - `backend/` — Python package, tests and Dockerfile for the container jobs.
+- `frontend/` — static Mapbox web app (Vite + React + TS) that shows the typical profiles; deployed to GitHub Pages.
   Commands below run from the repo root.
 - `infra/` — Bicep for all Azure resources (shared).
 - `docs/` — specs and plans.
@@ -58,6 +59,36 @@ python -m bicikelj_log.build_typical
 ```
 
 It exits 1 and publishes nothing until at least one full local day of data exists.
+
+## Frontend (typical availability map)
+
+`frontend/` is a static site that reads the published `typical/v1/*.json` and shows each
+station's chance of being empty (bikes) or full (docks) for any weekday and 15-minute
+slot. Live at `https://jakaskerjanc.github.io/bicikelj-log/`. Design:
+`docs/superpowers/specs/2026-10-01-typical-availability-frontend-design.md`.
+
+```bash
+cd frontend
+npm ci
+cp .env.example .env.local   # then fill in both values
+npm run dev                  # http://localhost:5173/bicikelj-log/
+npm test && npm run typecheck
+```
+
+Before the backend has published anything, use synthetic data:
+
+```bash
+npm run fake-data
+VITE_DATA_BASE_URL=/bicikelj-log/dev-data/v1/ npm run dev
+```
+
+The `frontend` workflow tests every PR and deploys `main` to GitHub Pages. One-time setup:
+
+1. Repo Settings → Pages → Source: **GitHub Actions**.
+2. Mapbox: create a public (`pk.`) token with URL restrictions
+   `https://jakaskerjanc.github.io/bicikelj-log/` and `http://localhost:5173`.
+3. Repo secret `MAPBOX_TOKEN` = that token; repo variable `DATA_BASE_URL` = the
+   `publicBaseUrl` deployment output (ends in `/typical/v1/`).
 
 ## Deploy to Azure
 
