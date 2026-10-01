@@ -106,7 +106,7 @@ frontend/
       TypicalPanel.tsx, DayChips.tsx, TimeSlider.tsx, ModeToggle.tsx, Legend.tsx
     station/
       StationDetail.tsx  popup (desktop) / bottom sheet (mobile)
-      DayChart.tsx       SVG bar chart
+      DayChart.tsx       bar chart (a row of buttons)
 ```
 
 ### `StationMap`
@@ -166,7 +166,7 @@ Containers:
 
 ### `DayChart`
 
-- An SVG bar chart of `p` across the selected day, coloured with `bucket()`.
+- A bar chart of `p`, built as a row of buttons (one per bar, so each is tappable and labelled), across the selected day, coloured with `bucket()`.
 - Desktop shows 96 bars. Mobile shows 24 hourly bars, each the mean of its 4 slots
   with nulls ignored. An hour with all 4 slots null is null.
 - A `null` bar is drawn as a short grey stub. The bar containing the selected slot
@@ -202,7 +202,7 @@ Containers:
 - New workflow `.github/workflows/frontend.yml`, modelled on `build.yml`:
   - Triggers: `push` to `main` and `pull_request`, on paths `frontend/**` and
     `.github/workflows/frontend.yml`.
-  - Job `test`: Node 22, `npm ci`, `typecheck`, `test`, `build`. All of these run in
+  - Job `test`: Node 24 (jsdom 30 and Vitest 5 need ≥ 22.22 / 24.15), `npm ci`, `typecheck`, `test`, `build`. All of these run in
     `frontend/`.
   - Job `deploy`: only on `main`, needs `test`, and has permissions `pages: write` and
     `id-token: write`. It builds, then runs `actions/upload-pages-artifact`
@@ -213,7 +213,7 @@ Containers:
     they are set.
 - Local dev uses `frontend/.env.local` (gitignored, with `.env.example` committed).
   It points at the real production JSON, which works because CORS allows any origin.
-  There is no mock server.
+  There is no mock server. Until the backend is deployed, `npm run fake-data` writes synthetic data to `frontend/public/dev-data/v1/` (gitignored, never built in CI); point `VITE_DATA_BASE_URL` at `/bicikelj-log/dev-data/v1/` to use it.
 - The README gets a "Frontend" section covering the one-time setup:
   1. In the repo settings, set Pages → Source to "GitHub Actions".
   2. Create a Mapbox public (`pk.`) token with URL restrictions
