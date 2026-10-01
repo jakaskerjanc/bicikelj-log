@@ -1,9 +1,19 @@
+import gzip
+import json
 from datetime import date
 
-from azure.core.exceptions import ResourceExistsError
-from azure.storage.blob import ContainerClient
+from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
+from azure.storage.blob import ContainerClient, ContentSettings
 
 from .config import Config
+
+INFO_PREFIX = "station_information/"
+PUBLIC_PREFIX = "v1/"
+PUBLIC_CONTENT_SETTINGS = ContentSettings(
+    content_type="application/json",
+    content_encoding="gzip",
+    cache_control="public, max-age=3600",
+)
 
 
 def status_blob_path(day: date) -> str:
@@ -11,7 +21,34 @@ def status_blob_path(day: date) -> str:
 
 
 def info_blob_path(day: date) -> str:
-    return f"station_information/{day:%Y-%m-%d}.json"
+    return f"{INFO_PREFIX}{day:%Y-%m-%d}.json"
+
+
+def public_blob_path(name: str) -> str:
+    return f"{PUBLIC_PREFIX}{name}.json"
+
+
+def _container_client(
+    connection_string: str | None, account_url: str | None, container: str, *, create: bool
+) -> ContainerClient:
+    if connection_string:
+        cc = ContainerClient.from_connection_string(connection_string, container)
+    else:
+        from azure.identity import DefaultAzureCredential
+
+        cc = ContainerClient(
+            account_url=account_url,
+            container_name=container,
+            credential=DefaultAzureCredential(),
+        )
+    if create:
+        # Read-only identities (the typical job on the raw account) must pass
+        # create=False: Azure answers 403, not 409, for an existing container.
+        try:
+            cc.create_container()
+        except ResourceExistsError:
+            pass
+    return cc
 
 
 class BlobStore:
@@ -19,24 +56,8 @@ class BlobStore:
         self._cc = container_client
 
     @classmethod
-    def from_config(cls, config: Config) -> "BlobStore":
-        if config.connection_string:
-            cc = ContainerClient.from_connection_string(
-                config.connection_string, config.container
-            )
-        else:
-            from azure.identity import DefaultAzureCredential
-
-            cc = ContainerClient(
-                account_url=config.account_url,
-                container_name=config.container,
-                credential=DefaultAzureCredential(),
-            )
-        try:
-            cc.create_container()
-        except ResourceExistsError:
-            pass
-        return cls(cc)
+    def from_config(cls, config: Config, *, create: bool = True) -> "BlobStore":
+        return cls(_container_client(config.connection_string, config.account_url, config.container, create=create))
 
     def append_status(self, day: date, data: bytes) -> None:
         blob = self._cc.get_blob_client(status_blob_path(day))
@@ -56,3 +77,36 @@ class BlobStore:
             return True
         except ResourceExistsError:
             return False
+
+    def read_status(self, day: date) -> bytes | None:
+        """Whole UTC-day status blob (~5 MB), or None if that day was never logged."""
+        try:
+            return self._cc.get_blob_client(status_blob_path(day)).download_blob().readall()
+        except ResourceNotFoundError:
+            return None
+
+    def latest_station_info(self) -> dict:
+        names = [b.name for b in self._cc.list_blobs(name_starts_with=INFO_PREFIX)]
+        if not names:
+            raise ValueError("no station_information snapshot found")
+        latest = max(names)  # YYYY-MM-DD names sort chronologically
+        return json.loads(self._cc.get_blob_client(latest).download_blob().readall())
+
+
+class PublicStore:
+    def __init__(self, container_client: ContainerClient) -> None:
+        self._cc = container_client
+
+    @classmethod
+    def from_config(cls, config: Config) -> "PublicStore":
+        if not config.connection_string and not config.public_account_url:
+            raise ValueError("Set BICIKELJ_PUBLIC_ACCOUNT_URL or AZURE_STORAGE_CONNECTION_STRING")
+        # In Azure, Bicep creates the container (with public access); only Azurite needs it created here.
+        return cls(_container_client(config.connection_string, config.public_account_url,
+                                     config.public_container, create=bool(config.connection_string)))
+
+    def publish_json(self, name: str, doc: dict) -> None:
+        body = gzip.compress(json.dumps(doc, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))
+        self._cc.get_blob_client(public_blob_path(name)).upload_blob(
+            body, overwrite=True, content_settings=PUBLIC_CONTENT_SETTINGS
+        )
