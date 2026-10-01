@@ -94,3 +94,90 @@ class SlotAccumulator:
 
     def daily_values(self) -> DailySlots:
         return {k: s.mean() for k, s in self._sums.items()}
+
+
+def window_days(today: date) -> list[date]:
+    """Local days [today-WINDOW_DAYS, today-1], oldest first. Today is never included."""
+    return [today - timedelta(days=i) for i in range(WINDOW_DAYS, 0, -1)]
+
+
+def weight(day: date, build_date: date) -> float:
+    return 0.5 ** ((build_date - day).days / HALF_LIFE_DAYS)
+
+
+def shrink(n: float, x_d: float | None, prior: float | None) -> float | None:
+    """Spec formula: (n·x_d + K·x_prior) / (n + K), falling back to whichever side exists."""
+    if n <= 0 or x_d is None:
+        return prior
+    if prior is None:
+        return x_d
+    return (n * x_d + K * prior) / (n + K)
+
+
+@dataclass
+class Profile:
+    days_used: float
+    # station_id -> field -> SLOTS_PER_DAY values (None = no data)
+    stations: dict[str, dict[str, list[float | None]]]
+
+
+class _WeightedSum:
+    __slots__ = ("w", "sums")
+
+    def __init__(self) -> None:
+        self.w = 0.0
+        self.sums = [0.0] * len(FIELDS)
+
+    def add(self, w: float, v: SlotValues) -> None:
+        self.w += w
+        for i, x in enumerate(v):
+            self.sums[i] += w * x
+
+    def mean(self, i: int) -> float | None:
+        return self.sums[i] / self.w if self.w > 0 else None
+
+
+def _group(dt: str) -> str:
+    return "weekday" if dt in WEEKDAY_TYPES else "rest"
+
+
+def build_profiles(daily: DailySlots, build_date: date) -> dict[str, Profile]:
+    """Steps 2-3: recency-weighted, shrunk estimate per (station, day type, slot)."""
+    window = set(window_days(build_date))
+    by_type: dict[tuple[str, str, int], _WeightedSum] = {}
+    by_group: dict[tuple[str, str, int], _WeightedSum] = {}
+    days_seen: set[date] = set()  # days with data; see days_used below
+    stations: set[str] = set()
+    for (sid, day, slot), v in daily.items():
+        if day not in window:
+            continue
+        dt = day_type(day)
+        w = weight(day, build_date)
+        by_type.setdefault((sid, dt, slot), _WeightedSum()).add(w, v)
+        by_group.setdefault((sid, _group(dt), slot), _WeightedSum()).add(w, v)
+        days_seen.add(day)
+        stations.add(sid)
+
+    # Σ w over the window's days of each type that have data (spec: days_used).
+    # A day with no usable poll at all (logger outage) adds no evidence, so it
+    # doesn't count; this is what makes days_used grow ~1/week after deploy.
+    days_used = {dt: 0.0 for dt in DAY_TYPES}
+    for day in days_seen:
+        days_used[day_type(day)] += weight(day, build_date)
+
+    profiles = {dt: Profile(days_used=days_used[dt], stations={}) for dt in DAY_TYPES}
+    empty = _WeightedSum()
+    for sid in stations:
+        for dt in DAY_TYPES:  # "holiday" is last, so its prior ("sun") is already final
+            out = {f: [None] * SLOTS_PER_DAY for f in FIELDS}
+            for slot in range(SLOTS_PER_DAY):
+                own = by_type.get((sid, dt, slot), empty)
+                grp = by_group.get((sid, _group(dt), slot), empty)
+                for i, f in enumerate(FIELDS):
+                    if dt == "holiday":
+                        prior = profiles["sun"].stations[sid][f][slot]
+                    else:
+                        prior = grp.mean(i)
+                    out[f][slot] = shrink(own.w, own.mean(i), prior)
+            profiles[dt].stations[sid] = out
+    return profiles

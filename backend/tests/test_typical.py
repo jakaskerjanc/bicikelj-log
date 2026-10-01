@@ -3,7 +3,10 @@ from datetime import date, datetime
 
 import pytest
 
-from bicikelj_log.typical import SlotAccumulator, SlotValues, local_slot
+from bicikelj_log.typical import (
+    FIELDS, SlotAccumulator, SlotValues, build_profiles, local_slot, shrink, weight,
+    window_days,
+)
 
 
 def ts(iso: str) -> int:
@@ -81,3 +84,92 @@ def test_accumulator_skips_bad_and_blank_lines():
     acc.add_lines([b"{not json", line(t0).encode(), b"", b"\n", json.dumps({"ts": t0}).encode()])
     assert acc.bad_lines == 2
     assert acc.rows_read == 1
+
+
+def sv(bikes: float) -> SlotValues:
+    return SlotValues(bikes, 20 - bikes, 0.0, 0.0)
+
+
+# ---- window, weights and shrinkage -----------------------------------------
+
+def test_window_is_56_local_days_before_today():
+    days = window_days(date(2026, 9, 23))
+    assert len(days) == 56
+    assert days[0] == date(2026, 7, 29)
+    assert days[-1] == date(2026, 9, 22)
+
+
+def test_weight_halves_every_21_days():
+    assert weight(date(2026, 9, 1), date(2026, 9, 22)) == pytest.approx(0.5)
+    assert weight(date(2026, 9, 22), date(2026, 9, 22)) == 1.0
+
+
+def test_shrink():
+    assert shrink(2.0, 10.0, 4.0) == pytest.approx(7.0)
+    assert shrink(0.0, None, 4.0) == 4.0
+    assert shrink(0.0, None, None) is None
+    assert shrink(1.0, 3.0, None) == 3.0
+
+
+# ---- build_profiles --------------------------------------------------------
+
+BUILD = date(2026, 9, 22)
+SLOT = 32
+
+
+def _golden_daily():
+    # Station 1, slot 32 (08:00), weekdays Sep 14-21 2026 — real data from the spec.
+    bikes = {14: 13.0, 15: 2.0, 16: 14 / 3, 17: 44 / 3, 18: 23 / 3, 21: 9.0}
+    return {("1", date(2026, 9, d), SLOT): sv(b) for d, b in bikes.items()}
+
+
+def test_golden_worked_example_from_spec():
+    p = build_profiles(_golden_daily(), BUILD)
+    assert p["mon"].stations["1"]["bikes"][SLOT] == pytest.approx(9.57, abs=0.01)
+    assert p["mon"].days_used == pytest.approx(1.736, abs=0.001)
+
+
+def test_day_type_without_own_data_equals_weekday_prior():
+    daily = {k: v for k, v in _golden_daily().items() if k[1] != date(2026, 9, 18)}  # drop the Friday
+    p = build_profiles(daily, BUILD)
+    fri = p["fri"].stations["1"]["bikes"][SLOT]
+    num = sum(weight(d, BUILD) * v.bikes for (_, d, _), v in daily.items())
+    den = sum(weight(d, BUILD) for (_, d, _) in daily)
+    assert fri == pytest.approx(num / den)
+    assert p["fri"].days_used == 0.0
+
+
+def test_holiday_without_data_equals_sunday():
+    daily = {("1", date(2026, 9, 19), SLOT): sv(3.0), ("1", date(2026, 9, 20), SLOT): sv(7.0)}
+    p = build_profiles(daily, BUILD)
+    for f in FIELDS:
+        assert p["holiday"].stations["1"][f] == p["sun"].stations["1"][f]
+    assert p["holiday"].days_used == 0.0
+
+
+def test_weekend_data_does_not_leak_into_weekday_profiles():
+    daily = {("1", date(2026, 9, 20), SLOT): sv(7.0)}  # a Sunday only
+    p = build_profiles(daily, BUILD)
+    assert p["mon"].stations["1"]["bikes"][SLOT] is None
+    assert p["sat"].stations["1"]["bikes"][SLOT] == pytest.approx(7.0)
+
+
+def test_holiday_date_is_excluded_from_its_weekday():
+    build = date(2026, 12, 30)
+    daily = {("1", date(2026, 12, 25), SLOT): sv(1.0),   # Christmas (Friday)
+             ("1", date(2026, 12, 18), SLOT): sv(9.0)}   # regular Friday
+    p = build_profiles(daily, build)
+    assert p["fri"].stations["1"]["bikes"][SLOT] == pytest.approx(9.0)
+
+
+def test_slot_with_no_data_anywhere_is_none():
+    p = build_profiles(_golden_daily(), BUILD)
+    assert p["mon"].stations["1"]["bikes"][SLOT + 1] is None
+
+
+def test_days_outside_window_are_ignored():
+    daily = {("1", date(2026, 7, 27), SLOT): sv(99.0),   # 57 days before BUILD
+             ("1", BUILD, SLOT): sv(99.0),               # today (incomplete)
+             ("1", date(2026, 9, 21), SLOT): sv(9.0)}
+    p = build_profiles(daily, BUILD)
+    assert p["mon"].stations["1"]["bikes"][SLOT] == pytest.approx(9.0)
