@@ -4,7 +4,7 @@ from datetime import date, datetime, timezone
 import pytest
 
 from bicikelj_log.typical import (
-    FIELDS, SLOTS_PER_DAY, Profile, SlotAccumulator, SlotValues, build_profiles,
+    FIELDS, K, SLOTS_PER_DAY, Profile, SlotAccumulator, SlotValues, build_profiles,
     has_any_value, local_slot, meta_document, profile_document, shrink,
     station_list, weight, window_days,
 )
@@ -87,6 +87,16 @@ def test_accumulator_skips_bad_and_blank_lines():
     assert acc.rows_read == 1
 
 
+def test_accumulator_counts_absurd_ts_as_bad():
+    t0 = ts("2026-09-21T06:00:00+00:00")
+    inf_line = line(t0).replace(f'"ts": {t0}', '"ts": Infinity')
+    assert "Infinity" in inf_line
+    acc = SlotAccumulator()
+    acc.add_lines([line(10**20).encode(), inf_line.encode(), line(t0).encode()])
+    assert acc.bad_lines == 2
+    assert acc.rows_read == 1
+
+
 def sv(bikes: float) -> SlotValues:
     return SlotValues(bikes, 20 - bikes, 0.0, 0.0)
 
@@ -146,6 +156,23 @@ def test_holiday_without_data_equals_sunday():
     for f in FIELDS:
         assert p["holiday"].stations["1"][f] == p["sun"].stations["1"][f]
     assert p["holiday"].days_used == 0.0
+
+
+def test_holiday_with_own_data_is_shrunk_toward_sunday():
+    build = date(2026, 12, 30)
+    hol, sun_day = date(2026, 12, 25), date(2026, 12, 27)
+    p = build_profiles({("1", hol, SLOT): sv(2.0), ("1", sun_day, SLOT): sv(10.0)}, build)
+    n = weight(hol, build)
+    sun = p["sun"].stations["1"]["bikes"][SLOT]
+    assert p["holiday"].stations["1"]["bikes"][SLOT] == pytest.approx((n * 2.0 + K * sun) / (n + K))
+    assert p["holiday"].days_used == pytest.approx(n)
+
+
+def test_holiday_data_feeds_the_weekend_group_prior():
+    p = build_profiles({("1", date(2026, 12, 25), SLOT): sv(2.0)}, date(2026, 12, 30))
+    hol = p["holiday"].stations["1"]["bikes"][SLOT]
+    assert p["sat"].stations["1"]["bikes"][SLOT] == pytest.approx(hol)
+    assert p["fri"].stations["1"]["bikes"][SLOT] is None
 
 
 def test_weekend_data_does_not_leak_into_weekday_profiles():

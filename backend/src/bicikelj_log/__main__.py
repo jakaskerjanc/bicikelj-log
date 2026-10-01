@@ -23,11 +23,11 @@ def run_once(config: Config, http: httpx.Client, store: BlobStore, *, now: datet
             day, json.dumps(info_feed, separators=(",", ":")).encode("utf-8")
         )
         log(ts=now.isoformat(), ok=True, station_count=len(rows),
-             duration_ms=round((time.monotonic() - start) * 1000), error=None)
+            duration_ms=round((time.monotonic() - start) * 1000), error=None)
         return 0
     except Exception as e:  # noqa: BLE001 - top-level guard, no partial write
         log(ts=now.isoformat(), ok=False, station_count=0,
-             duration_ms=round((time.monotonic() - start) * 1000), error=str(e))
+            duration_ms=round((time.monotonic() - start) * 1000), error=str(e))
         return 1
 
 

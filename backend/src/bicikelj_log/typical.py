@@ -75,7 +75,8 @@ class SlotAccumulator:
                 key = (str(r["station_id"]), int(r["ts"]))
                 bikes, docks = float(r["bikes"]), float(r["docks"])
                 usable = bool(r["is_installed"]) and bool(r["is_renting"])
-            except (ValueError, KeyError, TypeError):
+                day, slot = local_slot(key[1])
+            except (ValueError, KeyError, TypeError, OverflowError, OSError):
                 self.bad_lines += 1
                 continue
             if key in seen:
@@ -84,7 +85,6 @@ class SlotAccumulator:
             self.rows_read += 1
             if not usable:
                 continue
-            day, slot = local_slot(key[1])
             s = self._sums.setdefault(SlotKey(key[0], day, slot), _SlotSums())
             s.bikes += bikes
             s.docks += docks
