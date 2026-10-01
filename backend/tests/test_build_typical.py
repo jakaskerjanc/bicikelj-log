@@ -6,6 +6,7 @@ import bicikelj_log.build_typical as bt
 from bicikelj_log.daytypes import DAY_TYPES
 from bicikelj_log.storage import BlobStore, PublicStore, public_blob_path
 from bicikelj_log.typical import SLOTS_PER_DAY, window_days
+from tests.conftest import status_line as _status_line
 
 NOW = datetime(2026, 9, 22, 23, 30, tzinfo=timezone.utc)  # 01:30 local on Sep 23
 INFO = {"data": {"stations": [
@@ -14,11 +15,8 @@ INFO = {"data": {"stations": [
 ]}}
 
 
-def status_line(iso: str, sid="1", bikes=5, docks=15) -> str:
-    return json.dumps({"ts": int(datetime.fromisoformat(iso).timestamp()), "station_id": sid,
-                       "bikes": bikes, "docks": docks, "bikes_disabled": 0, "docks_disabled": 0,
-                       "is_installed": True, "is_renting": True, "is_returning": True,
-                       "last_reported": None})
+def status_line(iso: str, **kw) -> str:
+    return _status_line(int(datetime.fromisoformat(iso).timestamp()), **kw)
 
 
 class FakeRaw:

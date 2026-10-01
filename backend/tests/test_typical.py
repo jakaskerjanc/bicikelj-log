@@ -3,21 +3,17 @@ from datetime import date, datetime, timezone
 
 import pytest
 
+from bicikelj_log.models import station_list
 from bicikelj_log.typical import (
-    FIELDS, K, SLOTS_PER_DAY, Profile, SlotAccumulator, SlotValues, build_profiles,
-    has_any_value, local_slot, meta_document, profile_document, shrink,
-    station_list, weight, window_days,
+    FIELDS, SHRINK_PRIOR_WEIGHT, SLOTS_PER_DAY, Profile, SlotAccumulator, SlotValues,
+    build_profiles, has_any_value, local_slot, meta_document, profile_document, shrink,
+    weight, window_days,
 )
+from tests.conftest import status_line as line
 
 
 def ts(iso: str) -> int:
     return int(datetime.fromisoformat(iso).timestamp())
-
-
-def line(t: int, sid="1", bikes=5, docks=15, installed=True, renting=True) -> str:
-    return json.dumps({"ts": t, "station_id": sid, "bikes": bikes, "docks": docks,
-                       "bikes_disabled": 0, "docks_disabled": 0, "is_installed": installed,
-                       "is_renting": renting, "is_returning": True, "last_reported": None})
 
 
 # ---- slotting -------------------------------------------------------------
@@ -164,7 +160,8 @@ def test_holiday_with_own_data_is_shrunk_toward_sunday():
     p = build_profiles({("1", hol, SLOT): sv(2.0), ("1", sun_day, SLOT): sv(10.0)}, build)
     n = weight(hol, build)
     sun = p["sun"].stations["1"]["bikes"][SLOT]
-    assert p["holiday"].stations["1"]["bikes"][SLOT] == pytest.approx((n * 2.0 + K * sun) / (n + K))
+    k = SHRINK_PRIOR_WEIGHT
+    assert p["holiday"].stations["1"]["bikes"][SLOT] == pytest.approx((n * 2.0 + k * sun) / (n + k))
     assert p["holiday"].days_used == pytest.approx(n)
 
 

@@ -5,7 +5,7 @@ from datetime import date
 from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
 from azure.storage.blob import ContainerClient, ContentSettings
 
-from .config import Config
+from .config import Config, ContainerTarget
 
 INFO_PREFIX = "station_information/"
 PUBLIC_PREFIX = "v1/"
@@ -29,16 +29,16 @@ def public_blob_path(name: str) -> str:
 
 
 def _container_client(
-    connection_string: str | None, account_url: str | None, container: str, *, create: bool
+    connection_string: str | None, target: ContainerTarget, *, create: bool
 ) -> ContainerClient:
     if connection_string:
-        cc = ContainerClient.from_connection_string(connection_string, container)
+        cc = ContainerClient.from_connection_string(connection_string, target.container)
     else:
         from azure.identity import DefaultAzureCredential
 
         cc = ContainerClient(
-            account_url=account_url,
-            container_name=container,
+            account_url=target.account_url,
+            container_name=target.container,
             credential=DefaultAzureCredential(),
         )
     if create:
@@ -57,7 +57,7 @@ class BlobStore:
 
     @classmethod
     def from_config(cls, config: Config, *, create: bool = True) -> "BlobStore":
-        return cls(_container_client(config.connection_string, config.account_url, config.container, create=create))
+        return cls(_container_client(config.connection_string, config.raw_target, create=create))
 
     def append_status(self, day: date, data: bytes) -> None:
         blob = self._cc.get_blob_client(status_blob_path(day))
@@ -102,8 +102,8 @@ class PublicStore:
         if not config.connection_string and not config.public_account_url:
             raise ValueError("Set BICIKELJ_PUBLIC_ACCOUNT_URL or AZURE_STORAGE_CONNECTION_STRING")
         # In Azure, Bicep creates the container (with public access); only Azurite needs it created here.
-        return cls(_container_client(config.connection_string, config.public_account_url,
-                                     config.public_container, create=bool(config.connection_string)))
+        create = bool(config.connection_string)
+        return cls(_container_client(config.connection_string, config.public_target, create=create))
 
     def publish_json(self, name: str, doc: dict) -> None:
         body = gzip.compress(json.dumps(doc, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))

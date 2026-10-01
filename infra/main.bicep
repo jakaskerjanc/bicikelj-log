@@ -155,51 +155,6 @@ resource alertActionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
   }
 }
 
-resource jobFailureAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = {
-  name: '${jobName}-failed-execution-alert'
-  location: 'global'
-  properties: {
-    description: 'Fires when the ${jobName} container job has a failed execution. Stateful (auto-resolves), so one email per incident plus a resolved notice.'
-    severity: 2
-    enabled: true
-    scopes: [
-      job.id
-    ]
-    evaluationFrequency: 'PT5M'
-    windowSize: 'PT15M'
-    targetResourceType: 'Microsoft.App/jobs'
-    criteria: {
-      'odata.type': 'Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria'
-      allOf: [
-        {
-          criterionType: 'StaticThresholdCriterion'
-          name: 'FailedExecutions'
-          metricName: 'Executions'
-          metricNamespace: 'Microsoft.App/jobs'
-          dimensions: [
-            {
-              name: 'state'
-              operator: 'Include'
-              values: [
-                'Failed'
-              ]
-            }
-          ]
-          operator: 'GreaterThanOrEqual'
-          threshold: 1
-          timeAggregation: 'Total'
-        }
-      ]
-    }
-    autoMitigate: true
-    actions: [
-      {
-        actionGroupId: alertActionGroup.id
-      }
-    ]
-  }
-}
-
 resource publicStorage 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   name: publicStorageAccountName
   location: location
@@ -314,15 +269,21 @@ resource typicalPublicContributor 'Microsoft.Authorization/roleAssignments@2022-
   }
 }
 
-resource typicalJobFailureAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = {
-  name: '${typicalJobName}-failed-execution-alert'
+// One failed-execution alert per job, all routed to the same action group.
+var alertedJobs = [
+  { name: jobName, id: job.id }
+  { name: typicalJobName, id: typicalJob.id }
+]
+
+resource jobFailureAlerts 'Microsoft.Insights/metricAlerts@2018-03-01' = [for j in alertedJobs: {
+  name: '${j.name}-failed-execution-alert'
   location: 'global'
   properties: {
-    description: 'Fires when the ${typicalJobName} container job has a failed execution. Stateful (auto-resolves), so one email per incident plus a resolved notice.'
+    description: 'Fires when the ${j.name} container job has a failed execution. Stateful (auto-resolves), so one email per incident plus a resolved notice.'
     severity: 2
     enabled: true
     scopes: [
-      typicalJob.id
+      j.id
     ]
     evaluationFrequency: 'PT5M'
     windowSize: 'PT15M'
@@ -357,7 +318,7 @@ resource typicalJobFailureAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = {
       }
     ]
   }
-}
+}]
 
 output storageAccountUrl string = 'https://${storage.name}.blob.core.windows.net'
 output jobName string = job.name

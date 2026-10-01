@@ -1,7 +1,11 @@
+import json
 import os
 import uuid
+from dataclasses import asdict
 
 import pytest
+
+from bicikelj_log.models import StatusRow
 
 AZURITE_CONN = (
     "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
@@ -9,6 +13,14 @@ AZURITE_CONN = (
     "K1SZFPTOtr/KBHBeksoGMGw==;"
     "BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;"
 )
+
+
+def status_line(ts: int, sid="1", bikes=5, docks=15, installed=True, renting=True) -> str:
+    """One raw status JSONL line, as the poller writes it."""
+    row = StatusRow(ts=ts, station_id=sid, bikes=bikes, docks=docks, bikes_disabled=0,
+                    docks_disabled=0, is_installed=installed, is_renting=renting,
+                    is_returning=True, last_reported=None)
+    return json.dumps(asdict(row))
 
 
 @pytest.fixture

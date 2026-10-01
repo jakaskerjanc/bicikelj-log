@@ -1,9 +1,15 @@
 import os
 from dataclasses import dataclass
+from typing import NamedTuple
 
 DEFAULT_GBFS_BASE_URL = "https://api.cyclocity.fr/contracts/ljubljana/gbfs/v3/"
 DEFAULT_CONTAINER = "bicikelj"
 DEFAULT_PUBLIC_CONTAINER = "typical"
+
+
+class ContainerTarget(NamedTuple):
+    account_url: str | None
+    container: str
 
 
 @dataclass(frozen=True)
@@ -14,6 +20,14 @@ class Config:
     connection_string: str | None
     public_account_url: str | None = None
     public_container: str = DEFAULT_PUBLIC_CONTAINER
+
+    @property
+    def raw_target(self) -> ContainerTarget:
+        return ContainerTarget(self.account_url, self.container)
+
+    @property
+    def public_target(self) -> ContainerTarget:
+        return ContainerTarget(self.public_account_url, self.public_container)
 
     @classmethod
     def from_env(cls) -> "Config":

@@ -10,12 +10,12 @@ from datetime import date, datetime, timedelta, timezone
 from typing import NamedTuple
 from zoneinfo import ZoneInfo
 
-from .daytypes import DAY_TYPES, WEEKDAY_TYPES, day_type
+from .daytypes import DAY_TYPES, WEEKDAY_TYPES, DayType, day_type
 
 TZ = ZoneInfo("Europe/Ljubljana")
 WINDOW_DAYS = 56
 HALF_LIFE_DAYS = 21
-K = 2
+SHRINK_PRIOR_WEIGHT = 2  # K in the spec: pseudo-days of evidence the prior is worth
 SLOT_MINUTES = 15
 SLOTS_PER_DAY = 24 * 60 // SLOT_MINUTES
 FIELDS = ("bikes", "docks", "p_empty", "p_full")
@@ -72,20 +72,20 @@ class SlotAccumulator:
                 continue
             try:
                 r = json.loads(line)
-                key = (str(r["station_id"]), int(r["ts"]))
+                station_id, ts = str(r["station_id"]), int(r["ts"])
                 bikes, docks = float(r["bikes"]), float(r["docks"])
                 usable = bool(r["is_installed"]) and bool(r["is_renting"])
-                day, slot = local_slot(key[1])
+                day, slot = local_slot(ts)
             except (ValueError, KeyError, TypeError, OverflowError, OSError):
                 self.bad_lines += 1
                 continue
-            if key in seen:
+            if (station_id, ts) in seen:
                 continue
-            seen.add(key)
+            seen.add((station_id, ts))
             self.rows_read += 1
             if not usable:
                 continue
-            s = self._sums.setdefault(SlotKey(key[0], day, slot), _SlotSums())
+            s = self._sums.setdefault(SlotKey(station_id, day, slot), _SlotSums())
             s.bikes += bikes
             s.docks += docks
             s.empty_polls += bikes == 0
@@ -111,7 +111,7 @@ def shrink(n: float, x_d: float | None, prior: float | None) -> float | None:
         return prior
     if prior is None:
         return x_d
-    return (n * x_d + K * prior) / (n + K)
+    return (n * x_d + SHRINK_PRIOR_WEIGHT * prior) / (n + SHRINK_PRIOR_WEIGHT)
 
 
 @dataclass
@@ -122,23 +122,26 @@ class Profile:
 
 
 class _WeightedSum:
-    __slots__ = ("w", "sums")
+    __slots__ = ("total_weight", "sums")
 
     def __init__(self) -> None:
-        self.w = 0.0
+        self.total_weight = 0.0
         self.sums = [0.0] * len(FIELDS)
 
     def add(self, w: float, v: SlotValues) -> None:
-        self.w += w
+        self.total_weight += w
         for i, x in enumerate(v):
             self.sums[i] += w * x
 
-    def mean(self, i: int) -> float | None:
-        return self.sums[i] / self.w if self.w > 0 else None
+    def mean(self) -> SlotValues | None:
+        if self.total_weight <= 0:
+            return None
+        return SlotValues(*(x / self.total_weight for x in self.sums))
 
 
-def _group(dt: str) -> str:
-    return "weekday" if dt in WEEKDAY_TYPES else "rest"
+def _prior_group(dt: DayType) -> str:
+    """Pooled group whose average is the shrinkage prior for dt."""
+    return "weekday" if dt in WEEKDAY_TYPES else "weekend"
 
 
 def build_profiles(daily: DailySlots, build_date: date) -> dict[str, Profile]:
@@ -154,7 +157,7 @@ def build_profiles(daily: DailySlots, build_date: date) -> dict[str, Profile]:
         dt = day_type(day)
         w = weight(day, build_date)
         by_type.setdefault((sid, dt, slot), _WeightedSum()).add(w, v)
-        by_group.setdefault((sid, _group(dt), slot), _WeightedSum()).add(w, v)
+        by_group.setdefault((sid, _prior_group(dt), slot), _WeightedSum()).add(w, v)
         days_seen.add(day)
         stations.add(sid)
 
@@ -171,14 +174,15 @@ def build_profiles(daily: DailySlots, build_date: date) -> dict[str, Profile]:
         for dt in DAY_TYPES:  # "holiday" is last, so its prior ("sun") is already final
             out = {f: [None] * SLOTS_PER_DAY for f in FIELDS}
             for slot in range(SLOTS_PER_DAY):
-                own = by_type.get((sid, dt, slot), empty)
-                grp = by_group.get((sid, _group(dt), slot), empty)
-                for i, f in enumerate(FIELDS):
-                    if dt == "holiday":
-                        prior = profiles["sun"].stations[sid][f][slot]
+                own_sum = by_type.get((sid, dt, slot), empty)
+                own_mean = own_sum.mean()
+                group_mean = by_group.get((sid, _prior_group(dt), slot), empty).mean()
+                for f in FIELDS:
+                    if dt == DayType.HOLIDAY:
+                        prior = profiles[DayType.SUN].stations[sid][f][slot]
                     else:
-                        prior = grp.mean(i)
-                    out[f][slot] = shrink(own.w, own.mean(i), prior)
+                        prior = getattr(group_mean, f, None)
+                    out[f][slot] = shrink(own_sum.total_weight, getattr(own_mean, f, None), prior)
             profiles[dt].stations[sid] = out
     return profiles
 
@@ -186,29 +190,6 @@ def build_profiles(daily: DailySlots, build_date: date) -> dict[str, Profile]:
 def _round(field: str, values: list[float | None]) -> list[float | None]:
     d = _DECIMALS[field]
     return [None if v is None else round(v, d) for v in values]
-
-
-def _station_name(name) -> str:
-    if isinstance(name, str):
-        return name
-    for n in name:
-        if n.get("language") == "sl":
-            return n["text"]
-    return name[0]["text"] if name else ""
-
-
-def station_list(info_feed: dict) -> list[dict]:
-    """Current stations from a GBFS v3 station_information feed, flattened for meta.json."""
-    return [
-        {
-            "id": str(s["station_id"]),
-            "name": _station_name(s.get("name", [])),
-            "lat": s["lat"],
-            "lon": s["lon"],
-            "capacity": s.get("capacity"),
-        }
-        for s in info_feed["data"]["stations"]
-    ]
 
 
 def profile_document(name: str, profile: Profile, station_ids: Iterable[str]) -> dict:
@@ -227,7 +208,7 @@ def meta_document(profiles: Mapping[str, Profile], stations: list[dict], generat
         "slot_minutes": SLOT_MINUTES,
         "window_days": WINDOW_DAYS,
         "half_life_days": HALF_LIFE_DAYS,
-        "k": K,
+        "k": SHRINK_PRIOR_WEIGHT,
         "profiles": {dt: {"days_used": round(profiles[dt].days_used, 1)} for dt in DAY_TYPES},
         "stations": stations,
     }

@@ -4,16 +4,32 @@ Run: python -m bicikelj_log.build_typical
 """
 import sys
 import time
+from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta, timezone
 
 from .config import Config
 from .daytypes import DAY_TYPES
 from .log import log
+from .models import station_list
 from .storage import BlobStore, PublicStore
 from .typical import (
     TZ, SlotAccumulator, build_profiles, has_any_value, meta_document,
-    profile_document, station_list, window_days,
+    profile_document, window_days,
 )
+
+
+@dataclass
+class RunStats:
+    """Fields of the job's one JSON log line; zeros when the run never got going."""
+    window_days_found: int = 0  # day files found (spec: missing files are skipped)
+    stations: int = 0
+    rows_read: int = 0
+    bad_lines: int = 0
+    duration_ms: int = 0
+
+
+def _log_run(now: datetime, stats: RunStats, error: str | None) -> None:
+    log(ts=now.isoformat(), ok=error is None, **asdict(stats), error=error)
 
 
 def utc_file_days(local_days: list[date]) -> list[date]:
@@ -25,19 +41,20 @@ def utc_file_days(local_days: list[date]) -> list[date]:
 
 def run(raw: BlobStore, public: PublicStore, *, now: datetime) -> int:
     start = time.monotonic()
-    acc = SlotAccumulator()
-    stats = dict(window_days_found=0, stations=0)
+    accumulator = SlotAccumulator()
+    stats = RunStats()
+    error = None
     try:
         today = now.astimezone(TZ).date()
         days = window_days(today)
         for d in utc_file_days(days):
             data = raw.read_status(d)
             if data is not None:
-                stats["window_days_found"] += 1  # day files found (spec: missing files are skipped)
-                acc.add_lines(data.splitlines())
-        daily = acc.daily_values()
+                stats.window_days_found += 1
+                accumulator.add_lines(data.splitlines())
+        daily = accumulator.daily_values()
         stations = station_list(raw.latest_station_info())
-        stats["stations"] = len(stations)
+        stats.stations = len(stations)
         profiles = build_profiles(daily, today)
         ids = [s["id"] for s in stations]
         docs = {dt: profile_document(dt, profiles[dt], ids) for dt in DAY_TYPES}
@@ -46,12 +63,12 @@ def run(raw: BlobStore, public: PublicStore, *, now: datetime) -> int:
         for dt in DAY_TYPES:
             public.publish_json(dt, docs[dt])
         public.publish_json("meta", meta_document(profiles, stations, now))  # last: see spec
-        ok, error, rc = True, None, 0
     except Exception as e:  # noqa: BLE001 - top-level guard; old public files stay live
-        ok, error, rc = False, str(e), 1
-    log(ts=now.isoformat(), ok=ok, **stats, rows_read=acc.rows_read, bad_lines=acc.bad_lines,
-        duration_ms=round((time.monotonic() - start) * 1000), error=error)
-    return rc
+        error = str(e)
+    stats.rows_read, stats.bad_lines = accumulator.rows_read, accumulator.bad_lines
+    stats.duration_ms = round((time.monotonic() - start) * 1000)
+    _log_run(now, stats, error)
+    return 0 if error is None else 1
 
 
 def main() -> int:
@@ -61,8 +78,7 @@ def main() -> int:
         raw = BlobStore.from_config(config, create=False)  # Reader role only on the raw account
         public = PublicStore.from_config(config)
     except Exception as e:  # noqa: BLE001 - config/auth setup failed before run's guard
-        log(ts=now.isoformat(), ok=False, window_days_found=0, stations=0, rows_read=0,
-            bad_lines=0, duration_ms=0, error=str(e))
+        _log_run(now, RunStats(), str(e))
         return 1
     return run(raw, public, now=now)
 
