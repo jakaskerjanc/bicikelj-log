@@ -16,13 +16,16 @@ jobs:
     defaults:
       run:
         working-directory: backend
-    services:
-      azurite:
-        image: mcr.microsoft.com/azure-storage/azurite
-        ports:
-          - 10000:10000
     steps:
       - uses: actions/checkout@v5
+      # Started as a step, not a service container: services can't pass args, and
+      # --skipApiVersionCheck is needed whenever azure-storage-blob ships an API
+      # version newer than the latest Azurite supports.
+      - name: Start Azurite
+        working-directory: .
+        run: |
+          docker run -d --name azurite -p 10000:10000 mcr.microsoft.com/azure-storage/azurite \
+            azurite-blob --blobHost 0.0.0.0 --skipApiVersionCheck
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
