@@ -28,3 +28,19 @@ def azurite_container():
         yield cc
     finally:
         cc.delete_container()
+
+
+@pytest.fixture
+def public_container(azurite_container):
+    """A second container in the same Azurite account, like local dev.
+
+    Depends on azurite_container so the skip/REQUIRE_AZURITE handling applies once.
+    """
+    from azure.storage.blob import ContainerClient
+
+    cc = ContainerClient.from_connection_string(AZURITE_CONN, "pub-" + uuid.uuid4().hex[:12])
+    cc.create_container()
+    try:
+        yield cc
+    finally:
+        cc.delete_container()
