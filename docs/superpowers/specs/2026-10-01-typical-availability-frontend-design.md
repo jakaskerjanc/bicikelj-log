@@ -19,7 +19,7 @@ Audience: riders in Ljubljana. English UI. It must work well on phones.
 ## Non-goals (v1)
 
 - Live, current availability. This map shows typical availability only.
-- The `holiday` profile. The weekday chips are Sun to Sat only, and holidays are not
+- The `holiday` profile. The weekday chips are Mon to Sun only, and holidays are not
   detected.
 - A Slovenian UI or i18n.
 - Station search, geolocation and routing.
@@ -60,7 +60,7 @@ Base URL comes from the `VITE_DATA_BASE_URL` build variable. It is the backend's
 
 | State | Type | Initial value |
 |---|---|---|
-| `day` | `'sun' \| 'mon' \| … \| 'sat'` | Current weekday in `Europe/Ljubljana` |
+| `day` | `'mon' \| 'tue' \| … \| 'sun'` | Current weekday in `Europe/Ljubljana` |
 | `slot` | `0..95` | Current slot in `Europe/Ljubljana`: `hour*4 + floor(minute/15)` |
 | `mode` | `'bikes' \| 'docks'` | `'bikes'` |
 | `selectedStationId` | `string \| null` | `null` |
@@ -133,7 +133,7 @@ Google "Typical traffic" control:
 
 1. Title "Typical availability", then the `Legend`, then `ModeToggle` (a two-segment
    pill: **Bikes | Docks**).
-2. `DayChips` showing S M T W T F S, Sunday first, with the selected chip as a filled
+2. `DayChips` showing M T W T F S S, Monday first, with the selected chip as a filled
    circle. Next to it, `TimeSlider`: a native `<input type="range" min=0 max=95>`
    styled with ticks and labels at 08:00, 12:00, 16:00 and 20:00 (slots 32, 48,
    64, 80).
