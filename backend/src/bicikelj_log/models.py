@@ -48,3 +48,26 @@ def status_rows(status_feed: dict) -> list[StatusRow]:
 def rows_to_jsonl(rows: list[StatusRow]) -> bytes:
     lines = [json.dumps(asdict(r), separators=(",", ":")) for r in rows]
     return ("\n".join(lines) + "\n").encode("utf-8")
+
+
+def _station_name(name) -> str:
+    if isinstance(name, str):
+        return name
+    for n in name:
+        if n.get("language") == "sl":
+            return n["text"]
+    return name[0]["text"] if name else ""
+
+
+def station_list(info_feed: dict) -> list[dict]:
+    """Current stations from a GBFS v3 station_information feed, flattened for meta.json."""
+    return [
+        {
+            "id": str(s["station_id"]),
+            "name": _station_name(s.get("name", [])),
+            "lat": s["lat"],
+            "lon": s["lon"],
+            "capacity": s.get("capacity"),
+        }
+        for s in info_feed["data"]["stations"]
+    ]

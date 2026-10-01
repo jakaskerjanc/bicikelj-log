@@ -1,7 +1,8 @@
 # bicikelj-log
 
 Polls the BicikeLJ GBFS feed every 5 minutes and appends per-station availability
-to Azure Blob Storage. Step 1 of 2 (fetch & save).
+to Azure Blob Storage (step 1), and rebuilds "typical availability" profiles once a
+day from that history (step 2, see `docs/superpowers/specs/2026-09-23-typical-availability-design.md`).
 
 ## Repository layout
 
@@ -28,6 +29,36 @@ export BICIKELJ_CONTAINER=bicikelj
 python -m bicikelj_log
 ```
 
+## Typical availability (daily build)
+
+`python -m bicikelj_log.build_typical` reads the last 56 local days of `status/`,
+computes 8 profiles (Mon–Sun + holiday, 96 × 15-min slots per station) and publishes
+gzipped JSON to the public container:
+
+```
+https://<publicStorageAccount>.blob.core.windows.net/typical/v1/meta.json
+https://<publicStorageAccount>.blob.core.windows.net/typical/v1/{mon,tue,wed,thu,fri,sat,sun,holiday}.json
+```
+
+The exact base URL is the `publicBaseUrl` deployment output. In Azure it runs as
+`bicikelj-typical-job` daily at 01:30 UTC. Trigger it manually after the first deploy:
+
+```bash
+az containerapp job start -n bicikelj-typical-job -g bicikelj-rg
+```
+
+After the first deploy, wait ~5 minutes before this: new role assignments take time to
+propagate, and an early 403 (and failure-alert email) is not a bug.
+
+Locally (Azurite) both containers live in the dev account:
+
+```bash
+export AZURE_STORAGE_CONNECTION_STRING="UseDevelopmentStorage=true"
+python -m bicikelj_log.build_typical
+```
+
+It exits 1 and publishes nothing until at least one full local day of data exists.
+
 ## Deploy to Azure
 
 Infra is defined in `infra/main.bicep` and deployed via the `deploy` GitHub Actions
@@ -45,9 +76,11 @@ workflow (`workflow_dispatch`, manual trigger only — it never runs on push).
 5. Manual test run: `az containerapp job start -n bicikelj-log-job -g bicikelj-rg`.
 6. Verify blobs appear under `status/YYYY/MM/DD.jsonl` in the storage account.
 
-A failed job execution emails `ALERT_EMAIL` via an Azure Monitor alert on the job's
-`Executions` metric. The alert is stateful (auto-resolves), so a sustained outage
-sends one email when it fires and one when it resolves, not one per failed run.
+A failed execution of either job (`bicikelj-log-job` or `bicikelj-typical-job`) emails
+`ALERT_EMAIL` via an Azure Monitor alert on that job's `Executions` metric. Each job has
+its own alert, but both notify the same action group, so no extra deploy parameters are
+needed. The alerts are stateful (auto-resolve), so a sustained outage sends one email
+when it fires and one when it resolves, not one per failed run.
 
 Region defaults to `francecentral`: subscription policy allows only a few EU regions,
 and `germanywestcentral` hits the Container Apps environment quota.
