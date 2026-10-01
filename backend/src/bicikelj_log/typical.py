@@ -181,3 +181,63 @@ def build_profiles(daily: DailySlots, build_date: date) -> dict[str, Profile]:
                     out[f][slot] = shrink(own.w, own.mean(i), prior)
             profiles[dt].stations[sid] = out
     return profiles
+
+
+def _round(field: str, values: list[float | None]) -> list[float | None]:
+    d = _DECIMALS[field]
+    return [None if v is None else round(v, d) for v in values]
+
+
+def _station_name(name) -> str:
+    if isinstance(name, str):
+        return name
+    for n in name:
+        if n.get("language") == "sl":
+            return n["text"]
+    return name[0]["text"] if name else ""
+
+
+def station_list(info_feed: dict) -> list[dict]:
+    """Current stations from a GBFS v3 station_information feed, flattened for meta.json."""
+    return [
+        {
+            "id": str(s["station_id"]),
+            "name": _station_name(s.get("name", [])),
+            "lat": s["lat"],
+            "lon": s["lon"],
+            "capacity": s.get("capacity"),
+        }
+        for s in info_feed["data"]["stations"]
+    ]
+
+
+def profile_document(name: str, profile: Profile, station_ids: Iterable[str]) -> dict:
+    nulls = {f: [None] * SLOTS_PER_DAY for f in FIELDS}
+    stations = {}
+    for sid in station_ids:
+        values = profile.stations.get(sid, nulls)
+        stations[sid] = {f: _round(f, values[f]) for f in FIELDS}
+    return {"profile": name, "days_used": round(profile.days_used, 1), "stations": stations}
+
+
+def meta_document(profiles: Mapping[str, Profile], stations: list[dict], generated_at: datetime) -> dict:
+    return {
+        "generated_at": generated_at.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "timezone": TZ.key,
+        "slot_minutes": SLOT_MINUTES,
+        "window_days": WINDOW_DAYS,
+        "half_life_days": HALF_LIFE_DAYS,
+        "k": K,
+        "profiles": {dt: {"days_used": round(profiles[dt].days_used, 1)} for dt in DAY_TYPES},
+        "stations": stations,
+    }
+
+
+def has_any_value(docs: Iterable[dict]) -> bool:
+    return any(
+        v is not None
+        for doc in docs
+        for st in doc["stations"].values()
+        for arr in st.values()
+        for v in arr
+    )

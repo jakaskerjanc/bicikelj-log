@@ -1,11 +1,12 @@
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 import pytest
 
 from bicikelj_log.typical import (
-    FIELDS, SlotAccumulator, SlotValues, build_profiles, local_slot, shrink, weight,
-    window_days,
+    FIELDS, SLOTS_PER_DAY, Profile, SlotAccumulator, SlotValues, build_profiles,
+    has_any_value, local_slot, meta_document, profile_document, shrink,
+    station_list, weight, window_days,
 )
 
 
@@ -173,3 +174,61 @@ def test_days_outside_window_are_ignored():
              ("1", date(2026, 9, 21), SLOT): sv(9.0)}
     p = build_profiles(daily, BUILD)
     assert p["mon"].stations["1"]["bikes"][SLOT] == pytest.approx(9.0)
+
+
+# ---- documents -------------------------------------------------------------
+
+INFO = {"data": {"stations": [
+    {"station_id": "1", "name": [{"text": "PREŠERNOV TRG", "language": "sl"},
+                                 {"text": "PRESEREN SQ", "language": "en"}],
+     "lat": 46.05, "lon": 14.5, "capacity": 20},
+    {"station_id": 2, "name": [{"text": "Only English", "language": "en"}],
+     "lat": 46.06, "lon": 14.51, "capacity": 18},
+]}}
+
+
+def test_station_list_flattens_names_and_ids():
+    assert station_list(INFO) == [
+        {"id": "1", "name": "PREŠERNOV TRG", "lat": 46.05, "lon": 14.5, "capacity": 20},
+        {"id": "2", "name": "Only English", "lat": 46.06, "lon": 14.51, "capacity": 18},
+    ]
+
+
+def test_profile_document_shape_rounding_and_station_set():
+    bikes = [None] * SLOTS_PER_DAY
+    bikes[SLOT] = 9.5678
+    pe = [None] * SLOTS_PER_DAY
+    pe[SLOT] = 0.12345
+    prof = Profile(days_used=1.736, stations={
+        "1": {"bikes": bikes, "docks": bikes, "p_empty": pe, "p_full": pe},
+        "99": {"bikes": bikes, "docks": bikes, "p_empty": pe, "p_full": pe},  # not in snapshot
+    })
+    doc = profile_document("mon", prof, ["1", "2"])
+    assert doc["profile"] == "mon"
+    assert doc["days_used"] == 1.7
+    assert set(doc["stations"]) == {"1", "2"}                 # 99 dropped, 2 present
+    assert doc["stations"]["1"]["bikes"][SLOT] == 9.6
+    assert doc["stations"]["1"]["p_empty"][SLOT] == 0.12
+    assert doc["stations"]["2"]["bikes"] == [None] * SLOTS_PER_DAY  # new station: all null
+    assert all(len(a) == SLOTS_PER_DAY for s in doc["stations"].values() for a in s.values())
+    json.dumps(doc)  # serialisable
+
+
+def test_meta_document():
+    profiles = {dt: Profile(days_used=1.736 if dt == "mon" else 0.0, stations={})
+                for dt in ("mon", "tue", "wed", "thu", "fri", "sat", "sun", "holiday")}
+    meta = meta_document(profiles, station_list(INFO), datetime(2026, 9, 23, 1, 30, 12, tzinfo=timezone.utc))
+    assert meta["generated_at"] == "2026-09-23T01:30:12Z"
+    assert meta["timezone"] == "Europe/Ljubljana"
+    assert (meta["slot_minutes"], meta["window_days"], meta["half_life_days"], meta["k"]) == (15, 56, 21, 2)
+    assert json.dumps(meta["k"]) == "2"  # contract says "k": 2, not 2.0
+    assert meta["profiles"]["mon"] == {"days_used": 1.7}
+    assert list(meta["profiles"]) == ["mon", "tue", "wed", "thu", "fri", "sat", "sun", "holiday"]
+    assert meta["stations"][0]["id"] == "1"
+
+
+def test_has_any_value():
+    nulls = {f: [None] * SLOTS_PER_DAY for f in FIELDS}
+    assert has_any_value([{"stations": {"1": nulls}}]) is False
+    some = dict(nulls, bikes=[1.0] + [None] * (SLOTS_PER_DAY - 1))
+    assert has_any_value([{"stations": {"1": nulls}}, {"stations": {"1": some}}]) is True
