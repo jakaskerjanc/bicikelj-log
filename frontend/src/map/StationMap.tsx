@@ -61,7 +61,11 @@ export function StationMap({ token, meta, profile, slot, mode, selectedId, onSel
       const hit = map.getLayer(LAYER) ? map.queryRenderedFeatures(e.point, { layers: [LAYER] })[0] : undefined;
       onSelectRef.current(hit ? String(hit.properties?.id) : null);
     });
+    // Mapbox only tracks window resizes; the mobile sheet resizes the map area on its own.
+    const resizeObserver = new ResizeObserver(() => map.resize());
+    resizeObserver.observe(containerRef.current);
     return () => {
+      resizeObserver.disconnect();
       mapRef.current = null;
       setLoaded(false);
       map.remove();
