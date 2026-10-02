@@ -1,0 +1,71 @@
+name: frontend
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend.yml"
+  pull_request:
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend.yml"
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      # Fork PRs get no secrets/vars; the build only checks that both are set, so placeholders suffice here.
+      - run: npm run build
+        env:
+          VITE_MAPBOX_TOKEN: ${{ secrets.MAPBOX_TOKEN || 'pk.ci-placeholder' }}
+          VITE_DATA_BASE_URL: ${{ vars.DATA_BASE_URL || 'https://example.invalid/typical/v1/' }}
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    # Scoped to this job so PR runs never queue behind (or cancel) a pending deploy.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      # No placeholders here: a missing secret/variable must fail the deploy, not ship a blank map.
+      - run: npm run build
+        env:
+          VITE_MAPBOX_TOKEN: ${{ secrets.MAPBOX_TOKEN }}
+          VITE_DATA_BASE_URL: ${{ vars.DATA_BASE_URL }}
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: frontend/dist
+      - id: deployment
+        uses: actions/deploy-pages@v5
