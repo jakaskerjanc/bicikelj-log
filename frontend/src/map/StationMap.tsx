@@ -123,6 +123,7 @@ export function StationMap({ token, meta, profile, slot, mode, selectedId, onSel
     if (!map || !loaded || !station || !map.getSource(SOURCE)) return;
     map.setFeatureState({ source: SOURCE, id: station.id }, { selected: true });
     let popupObj: mapboxgl.Popup | null = null;
+    let resizeObserver: ResizeObserver | null = null;
     if (compact) {
       map.easeTo({ center: [station.lon, station.lat] });
     } else {
@@ -135,9 +136,15 @@ export function StationMap({ token, meta, profile, slot, mode, selectedId, onSel
       popupObj.on('close', () => {
         if (popupObj) onSelectRef.current(null);
       });
+      // The popup is added empty and React fills it later, so Mapbox's above/below anchor would be
+      // chosen from a zero-size box. setLngLat re-runs the placement whenever the content resizes.
+      const lngLat: [number, number] = [station.lon, station.lat];
+      resizeObserver = new ResizeObserver(() => popupObj?.setLngLat(lngLat));
+      resizeObserver.observe(node);
       setPopupNode(node);
     }
     return () => {
+      resizeObserver?.disconnect();
       const toRemove = popupObj;
       popupObj = null;
       toRemove?.remove();

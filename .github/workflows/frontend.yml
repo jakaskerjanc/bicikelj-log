@@ -11,10 +11,6 @@ on:
       - ".github/workflows/frontend.yml"
   workflow_dispatch:
 
-concurrency:
-  group: pages
-  cancel-in-progress: false
-
 jobs:
   test:
     runs-on: ubuntu-24.04
@@ -40,6 +36,10 @@ jobs:
   deploy:
     needs: test
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    # Scoped to this job so PR runs never queue behind (or cancel) a pending deploy.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     permissions:
       contents: read

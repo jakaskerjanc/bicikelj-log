@@ -14,7 +14,6 @@ export default defineConfig(({ command, mode }) => {
     }
   }
   return {
-    base: '/bicikelj-log/',
     plugins: [react()],
     test: {
       environment: 'jsdom',

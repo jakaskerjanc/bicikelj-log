@@ -29,8 +29,8 @@ Audience: riders in Ljubljana. English UI. It must work well on phones.
 
 - Vite + React + TypeScript + `mapbox-gl`. No state library and no UI kit.
 - It lives in a new `frontend/` folder next to `backend/` and `infra/`.
-- It is hosted on GitHub Pages at `https://jakaskerjanc.github.io/bicikelj-log/`
-  (Vite `base: '/bicikelj-log/'`).
+- It is hosted on GitHub Pages under the custom domain `https://bicikelj.jakas.si/`
+  (`frontend/public/CNAME`; Vite's default `base: '/'`).
 - Map style: `mapbox://styles/mapbox/light-v11`, so the coloured circles stand out.
 
 ## Data
@@ -213,11 +213,12 @@ Containers:
     they are set.
 - Local dev uses `frontend/.env.local` (gitignored, with `.env.example` committed).
   It points at the real production JSON, which works because CORS allows any origin.
-  There is no mock server. Until the backend is deployed, `npm run fake-data` writes synthetic data to `frontend/public/dev-data/v1/` (gitignored, never built in CI); point `VITE_DATA_BASE_URL` at `/bicikelj-log/dev-data/v1/` to use it.
+  There is no mock server. Until the backend is deployed, `npm run fake-data` writes synthetic data to `frontend/public/dev-data/v1/` (gitignored, never built in CI); point `VITE_DATA_BASE_URL` at `/dev-data/v1/` to use it.
 - The README gets a "Frontend" section covering the one-time setup:
-  1. In the repo settings, set Pages → Source to "GitHub Actions".
+  1. In the repo settings, set Pages → Source to "GitHub Actions" and the custom domain
+     to `bicikelj.jakas.si` (DNS: `CNAME bicikelj → jakaskerjanc.github.io`), then enforce HTTPS.
   2. Create a Mapbox public (`pk.`) token with URL restrictions
-     `https://jakaskerjanc.github.io/bicikelj-log/` and `http://localhost:5173`.
+     `https://bicikelj.jakas.si/` and `http://localhost:5173`.
   3. Add the repo secret `MAPBOX_TOKEN`, and the repo variable `DATA_BASE_URL` set to
      the `publicBaseUrl` deployment output.
 
