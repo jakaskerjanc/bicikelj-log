@@ -39,10 +39,10 @@ export function dayName(day: Day): string {
   return DAY_NAMES[day];
 }
 
-/** 96 quarter-hour values → 24 hourly means; nulls are ignored, an all-null hour is null. */
-export function hourly(values: Series): Series {
-  return Array.from({ length: 24 }, (_, hour) => {
-    const known = values.slice(hour * 4, hour * 4 + 4).filter((v): v is number => v !== null);
+/** 96 quarter-hour values → means of each `size` consecutive slots; nulls are ignored, an all-null group is null. */
+export function groupMeans(values: Series, size: number): Series {
+  return Array.from({ length: Math.ceil(values.length / size) }, (_, group) => {
+    const known = values.slice(group * size, group * size + size).filter((v): v is number => v !== null);
     return known.length > 0 ? known.reduce((a, b) => a + b, 0) / known.length : null;
   });
 }

@@ -81,13 +81,13 @@ describe('App', () => {
     expect(screen.getByRole('slider', { name: 'Time of day' })).toHaveValue('80');
   });
 
-  it('on mobile the station opens in a bottom sheet with an hourly chart', async () => {
+  it('on mobile the station opens in a bottom sheet with a half-hourly chart', async () => {
     setViewport('mobile');
     renderApp();
     await waitReady();
     await userEvent.click(screen.getByRole('button', { name: 'select station 1' }));
     const sheet = screen.getByRole('dialog', { name: 'Station details' });
-    expect(within(sheet).getAllByRole('button').filter((b) => b.classList.contains('bar-hit'))).toHaveLength(24);
+    expect(within(sheet).getAllByRole('button').filter((b) => b.classList.contains('bar-hit'))).toHaveLength(48);
     await userEvent.click(within(sheet).getByRole('button', { name: 'Close' }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });

@@ -3,7 +3,7 @@ import { scaleBand, scaleLinear } from '@visx/scale';
 import { Bar } from '@visx/shape';
 import { TimeTicks } from '../controls/TimeTicks';
 import { colorFor } from '../data/colors';
-import { hourly, slotLabel } from '../data/slots';
+import { groupMeans, slotLabel } from '../data/slots';
 import { formatPercent } from '../data/stations';
 import { SLOTS_PER_DAY, type Mode, type Series } from '../data/types';
 
@@ -13,7 +13,7 @@ interface Props {
   capacity: number;
   mode: Mode;
   slot: number;
-  compact: boolean; // phones: 24 hourly bars instead of 96
+  compact: boolean; // phones: 48 half-hour bars instead of 96
   onSelect: (slot: number) => void;
 }
 
@@ -31,11 +31,11 @@ function barLabel(slot: number, count: number | null, chance: number | null, mod
 }
 
 export function DayChart({ counts, chances, capacity, mode, slot, compact, onSelect }: Props) {
-  const slotsPerBar = compact ? 4 : 1;
-  const heights = compact ? hourly(counts) : counts;
-  const colors = compact ? hourly(chances) : chances;
+  const slotsPerBar = compact ? 2 : 1;
+  const heights = groupMeans(counts, slotsPerBar);
+  const colors = groupMeans(chances, slotsPerBar);
   const selected = Math.floor(slot / slotsPerBar);
-  const x = scaleBand({ domain: heights.map((_, i) => i), range: [0, W], paddingInner: compact ? 0.08 : 0.2 });
+  const x = scaleBand({ domain: heights.map((_, i) => i), range: [0, W], paddingInner: 0.2 });
   const y = scaleLinear({ domain: [0, 1], range: [0, H], clamp: true });
   return (
     <div className="day-chart">

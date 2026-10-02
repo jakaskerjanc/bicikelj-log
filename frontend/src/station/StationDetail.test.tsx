@@ -69,17 +69,17 @@ describe('DayChart', () => {
     expect(onSelect).toHaveBeenCalledWith(69);
   });
 
-  it('compact: 24 hourly bars, click selects the first slot of the hour', async () => {
+  it('compact: 48 half-hour bars, click selects the first slot of the half hour', async () => {
     const onSelect = renderChart({ slot: 37, compact: true });
-    expect(bars()).toHaveLength(24);
+    expect(bars()).toHaveLength(48);
     expect(screen.getByRole('button', { name: '9:00 AM: 5 bikes, 20 % chance empty' })).toHaveAttribute('aria-current', 'true');
-    await userEvent.click(screen.getByRole('button', { name: '8:00 PM: 5 bikes, 20 % chance empty' }));
-    expect(onSelect).toHaveBeenCalledWith(80);
+    await userEvent.click(screen.getByRole('button', { name: '8:30 PM: 5 bikes, 20 % chance empty' }));
+    expect(onSelect).toHaveBeenCalledWith(82);
   });
 
-  it('compact highlights hour 23 at slot 95', () => {
+  it('compact highlights the last half hour at slot 95', () => {
     renderChart({ slot: 95, compact: true });
-    expect(screen.getByRole('button', { name: '11:00 PM: 5 bikes, 20 % chance empty' })).toHaveAttribute('aria-current', 'true');
+    expect(screen.getByRole('button', { name: '11:30 PM: 5 bikes, 20 % chance empty' })).toHaveAttribute('aria-current', 'true');
   });
 
   it('bar height is the typical count as a share of capacity: more bikes, taller bar', () => {

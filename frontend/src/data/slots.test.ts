@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dayName, hourly, nowInLjubljana, slotLabel } from './slots';
+import { dayName, groupMeans, nowInLjubljana, slotLabel } from './slots';
 
 describe('nowInLjubljana', () => {
   it('maps 09:05 Ljubljana time to slot 36', () => {
@@ -40,20 +40,30 @@ describe('dayName', () => {
   });
 });
 
-describe('hourly', () => {
-  it('averages each group of 4 slots into 24 hours', () => {
-    const values = Array.from({ length: 96 }, (_, i) => Math.floor(i / 4) / 100);
-    const result = hourly(values);
-    expect(result).toHaveLength(24);
+describe('groupMeans', () => {
+  it('averages each group of 2 slots into 48 half hours', () => {
+    const values = Array.from({ length: 96 }, (_, i) => Math.floor(i / 2) / 100);
+    const result = groupMeans(values, 2);
+    expect(result).toHaveLength(48);
     expect(result[0]).toBeCloseTo(0);
-    expect(result[23]).toBeCloseTo(0.23);
+    expect(result[47]).toBeCloseTo(0.47);
   });
 
-  it('ignores nulls and returns null for an all-null hour', () => {
+  it('averages each group of 4 slots into 24 hours', () => {
+    const values = Array.from({ length: 96 }, (_, i) => i);
+    const result = groupMeans(values, 4);
+    expect(result).toHaveLength(24);
+    expect(result[0]).toBeCloseTo(1.5);
+  });
+
+  it('ignores nulls and returns null for an all-null group', () => {
     const values: (number | null)[] = Array(96).fill(null);
-    values[4] = 0.2; // hour 1: only one real value
-    values[7] = 0.4; // hour 1
-    expect(hourly(values)[0]).toBeNull();
-    expect(hourly(values)[1]).toBeCloseTo(0.3);
+    values[2] = 0.2; // half hour 1: only one real value
+    values[4] = 0.3; // half hour 2
+    values[5] = 0.5; // half hour 2
+    const result = groupMeans(values, 2);
+    expect(result[0]).toBeNull();
+    expect(result[1]).toBeCloseTo(0.2);
+    expect(result[2]).toBeCloseTo(0.4);
   });
 });
