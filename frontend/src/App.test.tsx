@@ -32,7 +32,7 @@ const waitReady = () => waitFor(() => expect(screen.queryByRole('status')).not.t
 describe('App', () => {
   it('opens at the given day and time and loads data', async () => {
     renderApp();
-    expect(screen.getByText('Monday, 09:00')).toBeInTheDocument();
+    expect(screen.getByText('Monday, 9:00 AM')).toBeInTheDocument();
     await waitReady();
     expect(screen.getByRole('button', { name: 'select station 1' })).toBeInTheDocument();
   });
@@ -41,7 +41,7 @@ describe('App', () => {
     renderApp();
     await waitReady();
     await userEvent.click(screen.getByRole('button', { name: 'Wednesday' }));
-    expect(screen.getByText('Wednesday, 09:00')).toBeInTheDocument();
+    expect(screen.getByText('Wednesday, 9:00 AM')).toBeInTheDocument();
   });
 
   it('shows Limited data for a thin profile only', async () => {
@@ -58,7 +58,7 @@ describe('App', () => {
     renderApp();
     await waitReady();
     fireEvent.change(screen.getByRole('slider', { name: 'Time of day' }), { target: { value: '37' } });
-    expect(screen.getByText('Monday, 09:15')).toBeInTheDocument();
+    expect(screen.getByText('Monday, 9:15 AM')).toBeInTheDocument();
   });
 
   it('the mode toggle swaps the legend word and the detail sentence', async () => {
@@ -76,8 +76,8 @@ describe('App', () => {
     renderApp();
     await waitReady();
     await userEvent.click(screen.getByRole('button', { name: 'select station 1' }));
-    await userEvent.click(screen.getByRole('button', { name: /^20:00:/ }));
-    expect(screen.getByText('Monday, 20:00')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /^8:00 PM:/ }));
+    expect(screen.getByText('Monday, 8:00 PM')).toBeInTheDocument();
     expect(screen.getByRole('slider', { name: 'Time of day' })).toHaveValue('80');
   });
 

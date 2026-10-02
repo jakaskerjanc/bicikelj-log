@@ -23,7 +23,7 @@ function setup(overrides: Partial<TypicalPanelProps> = {}) {
 describe('TypicalPanel', () => {
   it('shows the day and time label', () => {
     setup();
-    expect(screen.getByText('Monday, 09:00')).toBeInTheDocument();
+    expect(screen.getByText('Monday, 9:00 AM')).toBeInTheDocument();
   });
 
   it('day chips read M T W T F S S, Monday first, with the current day pressed', () => {

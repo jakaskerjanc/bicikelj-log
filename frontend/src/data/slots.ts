@@ -10,8 +10,8 @@ const DAY_NAMES: Record<Day, string> = {
   sun: 'Sunday',
 };
 
-/** Slots that get a tick label under the slider and the chart: 08:00, 12:00, 16:00, 20:00. */
-export const TICK_SLOTS = [32, 48, 64, 80] as const;
+/** Slots that get a tick label under the slider and the chart: every 3 hours from 3 AM to 9 PM. */
+export const TICK_SLOTS = [12, 24, 36, 48, 60, 72, 84] as const;
 
 const LJUBLJANA_CLOCK = new Intl.DateTimeFormat('en-GB', {
   timeZone: 'Europe/Ljubljana',
@@ -30,9 +30,9 @@ export function nowInLjubljana(now: Date = new Date()): { day: Day; slot: number
 
 export function slotLabel(slot: number): string {
   const minutes = slot * 15;
-  const hh = String(Math.floor(minutes / 60)).padStart(2, '0');
+  const hour = Math.floor(minutes / 60);
   const mm = String(minutes % 60).padStart(2, '0');
-  return `${hh}:${mm}`;
+  return `${hour % 12 || 12}:${mm} ${hour < 12 ? 'AM' : 'PM'}`;
 }
 
 export function dayName(day: Day): string {

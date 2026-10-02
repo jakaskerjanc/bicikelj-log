@@ -1,5 +1,6 @@
+import { TimeTicks } from '../controls/TimeTicks';
 import { colorFor } from '../data/colors';
-import { TICK_SLOTS, hourly, slotLabel } from '../data/slots';
+import { hourly, slotLabel } from '../data/slots';
 import { formatPercent } from '../data/stations';
 import { SLOTS_PER_DAY, type Series } from '../data/types';
 
@@ -33,13 +34,7 @@ export function DayChart({ values, slot, compact, onSelect }: Props) {
           </button>
         ))}
       </div>
-      <div className="ticks" aria-hidden="true">
-        {TICK_SLOTS.map((t) => (
-          <span key={t} style={{ left: `${(t / SLOTS_PER_DAY) * 100}%` }}>
-            {slotLabel(t)}
-          </span>
-        ))}
-      </div>
+      <TimeTicks span={SLOTS_PER_DAY} />
     </div>
   );
 }

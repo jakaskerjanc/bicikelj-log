@@ -61,6 +61,11 @@ body,
   gap: 12px;
 }
 
+.panel-time {
+  flex-direction: column;
+  align-items: stretch;
+}
+
 .panel-title {
   flex: 1;
   margin: 0;
@@ -137,7 +142,7 @@ body,
 .time-slider {
   position: relative;
   flex: 1;
-  padding-bottom: 16px;
+  padding-bottom: 26px;
 }
 
 .time-slider input {
@@ -148,15 +153,27 @@ body,
 
 .ticks {
   position: relative;
-  height: 14px;
+  height: 24px;
   font-size: 11px;
   color: var(--muted);
 }
 
 .ticks span {
   position: absolute;
+  top: 0;
+  padding-top: 8px;
   transform: translateX(-50%);
   white-space: nowrap;
+}
+
+.ticks span::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 1px;
+  height: 5px;
+  background: var(--muted);
 }
 
 .time-slider .ticks {
@@ -223,6 +240,7 @@ body,
 }
 
 .day-chart {
+  min-width: 300px; /* keeps the seven tick labels from colliding in the desktop popup */
   margin-top: 10px;
 }
 
@@ -326,11 +344,6 @@ body,
 
   .panel-row {
     flex-wrap: wrap;
-  }
-
-  .panel-time {
-    flex-direction: column;
-    align-items: stretch;
   }
 
   .day-chips {

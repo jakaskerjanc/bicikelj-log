@@ -1,5 +1,6 @@
-import { TICK_SLOTS, slotLabel } from '../data/slots';
+import { slotLabel } from '../data/slots';
 import { SLOTS_PER_DAY } from '../data/types';
+import { TimeTicks } from './TimeTicks';
 
 interface Props {
   slot: number;
@@ -19,13 +20,7 @@ export function TimeSlider({ slot, onChange }: Props) {
         aria-valuetext={slotLabel(slot)}
         onChange={(e) => onChange(Number(e.target.value))}
       />
-      <div className="ticks" aria-hidden="true">
-        {TICK_SLOTS.map((t) => (
-          <span key={t} style={{ left: `${(t / (SLOTS_PER_DAY - 1)) * 100}%` }}>
-            {slotLabel(t)}
-          </span>
-        ))}
-      </div>
+      <TimeTicks span={SLOTS_PER_DAY - 1} />
     </div>
   );
 }

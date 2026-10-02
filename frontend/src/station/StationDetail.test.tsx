@@ -44,8 +44,8 @@ describe('DayChart', () => {
     const onSelect = vi.fn();
     render(<DayChart values={series(0.2)} slot={36} compact={false} onSelect={onSelect} />);
     expect(bars()).toHaveLength(96);
-    expect(screen.getByRole('button', { name: '09:00: 20 %' })).toHaveAttribute('aria-current', 'true');
-    await userEvent.click(screen.getByRole('button', { name: '17:15: 20 %' }));
+    expect(screen.getByRole('button', { name: '9:00 AM: 20 %' })).toHaveAttribute('aria-current', 'true');
+    await userEvent.click(screen.getByRole('button', { name: '5:15 PM: 20 %' }));
     expect(onSelect).toHaveBeenCalledWith(69);
   });
 
@@ -53,19 +53,19 @@ describe('DayChart', () => {
     const onSelect = vi.fn();
     render(<DayChart values={series(0.2)} slot={37} compact onSelect={onSelect} />);
     expect(bars()).toHaveLength(24);
-    expect(screen.getByRole('button', { name: '09:00: 20 %' })).toHaveAttribute('aria-current', 'true');
-    await userEvent.click(screen.getByRole('button', { name: '20:00: 20 %' }));
+    expect(screen.getByRole('button', { name: '9:00 AM: 20 %' })).toHaveAttribute('aria-current', 'true');
+    await userEvent.click(screen.getByRole('button', { name: '8:00 PM: 20 %' }));
     expect(onSelect).toHaveBeenCalledWith(80);
   });
 
   it('compact highlights hour 23 at slot 95', () => {
     render(<DayChart values={series(0.2)} slot={95} compact onSelect={vi.fn()} />);
-    expect(screen.getByRole('button', { name: '23:00: 20 %' })).toHaveAttribute('aria-current', 'true');
+    expect(screen.getByRole('button', { name: '11:00 PM: 20 %' })).toHaveAttribute('aria-current', 'true');
   });
 
   it('null slots are labelled no data', () => {
     render(<DayChart values={series(null)} slot={0} compact={false} onSelect={vi.fn()} />);
-    expect(screen.getByRole('button', { name: '00:00: no data' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '12:00 AM: no data' })).toBeInTheDocument();
   });
 });
 

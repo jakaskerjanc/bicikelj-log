@@ -26,10 +26,10 @@ describe('nowInLjubljana', () => {
 
 describe('slotLabel', () => {
   it('formats 24-hour times', () => {
-    expect(slotLabel(0)).toBe('00:00');
-    expect(slotLabel(36)).toBe('09:00');
-    expect(slotLabel(37)).toBe('09:15');
-    expect(slotLabel(95)).toBe('23:45');
+    expect(slotLabel(0)).toBe('12:00 AM');
+    expect(slotLabel(36)).toBe('9:00 AM');
+    expect(slotLabel(37)).toBe('9:15 AM');
+    expect(slotLabel(95)).toBe('11:45 PM');
   });
 });
 
