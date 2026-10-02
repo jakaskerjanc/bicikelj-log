@@ -97,7 +97,7 @@ frontend/
       types.ts        Meta, Station, Profile, Day, Mode
       api.ts          fetchMeta(), fetchProfile(day) — fetch + validate
       useTypical.ts   hook: meta, profiles cache, loading/error state, retry(), prefetch
-      slots.ts        pure: nowInLjubljana(), slotLabel(i) → "09:00", hourly(values) → 24
+      slots.ts        pure: nowInLjubljana(), slotLabel(i) → "09:00", groupMeans(values, n) → 96/n
       colors.ts       pure: bucket(p), LEGEND
       stations.ts     pure: stationFeatureStates(meta, profile, slot, mode), titleCase(name)
     map/
@@ -167,7 +167,7 @@ Containers:
 ### `DayChart`
 
 - A bar chart of `p`, built as a row of buttons (one per bar, so each is tappable and labelled), across the selected day, coloured with `bucket()`.
-- Desktop shows 96 bars. Mobile shows 24 hourly bars, each the mean of its 4 slots
+- Desktop shows 96 bars. Mobile shows 48 half-hour bars, each the mean of its 2 slots
   with nulls ignored. An hour with all 4 slots null is null.
 - A `null` bar is drawn as a short grey stub. The bar containing the selected slot
   is outlined. X-axis labels: 08:00, 12:00, 16:00, 20:00.
@@ -230,7 +230,7 @@ Vitest with jsdom, plus React Testing Library.
   - `nowInLjubljana` gives the correct day and slot when the device timezone differs
     (for example a UTC timestamp near midnight), and on both DST transition dates
   - `slotLabel(0) = "00:00"`, `slotLabel(36) = "09:00"`, `slotLabel(95) = "23:45"`
-  - `hourly` averages 4 slots, ignores nulls, and returns null for an all-null hour
+  - `groupMeans` averages groups of slots, ignores nulls, and returns null for an all-null group
 - `colors.ts`: `bucket` at 0, 0.0999, 0.10, 0.2999, 0.30, 0.60 and 1, and for `null`.
 - `stations.ts`:
   - `stationFeatureStates` picks `p_empty` or `p_full` by mode, and gives null for a

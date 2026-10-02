@@ -11,6 +11,8 @@ const LAYER = 'stations';
 const LJUBLJANA: [number, number] = [14.5058, 46.0569];
 /** Feature-state value for "no data": below every threshold, so `step` maps it to the grey output. */
 const NO_DATA_P = -1;
+/** About half the desktop popup's height: the dot sits this far below centre so dot + popup are centred together. */
+const POPUP_HALF_HEIGHT = 110;
 
 export interface StationMapProps {
   token: string;
@@ -61,7 +63,11 @@ export function StationMap({ token, meta, profile, slot, mode, selectedId, onSel
       const hit = map.getLayer(LAYER) ? map.queryRenderedFeatures(e.point, { layers: [LAYER] })[0] : undefined;
       onSelectRef.current(hit ? String(hit.properties?.id) : null);
     });
+    // Mapbox only tracks window resizes; the mobile sheet resizes the map area on its own.
+    const resizeObserver = new ResizeObserver(() => map.resize());
+    resizeObserver.observe(containerRef.current);
     return () => {
+      resizeObserver.disconnect();
       mapRef.current = null;
       setLoaded(false);
       map.remove();
@@ -116,17 +122,16 @@ export function StationMap({ token, meta, profile, slot, mode, selectedId, onSel
     }
   }, [loaded, meta, profile, slot, mode]);
 
-  // Selection: outline the station; desktop opens a popup, mobile centres it above the sheet.
+  // Selection: outline and centre the station; desktop also opens a popup, mobile has the sheet below.
   useEffect(() => {
     const map = mapRef.current;
     const station = meta?.stations.find((s) => s.id === selectedId);
     if (!map || !loaded || !station || !map.getSource(SOURCE)) return;
     map.setFeatureState({ source: SOURCE, id: station.id }, { selected: true });
+    map.easeTo({ center: [station.lon, station.lat], offset: [0, compact ? 0 : POPUP_HALF_HEIGHT] });
     let popupObj: mapboxgl.Popup | null = null;
     let resizeObserver: ResizeObserver | null = null;
-    if (compact) {
-      map.easeTo({ center: [station.lon, station.lat] });
-    } else {
+    if (!compact) {
       const node = document.createElement('div');
       popupObj = new mapboxgl.Popup({ closeOnClick: false, maxWidth: '320px', offset: 12 })
         .setLngLat([station.lon, station.lat])

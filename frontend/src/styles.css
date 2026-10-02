@@ -245,32 +245,27 @@ body,
 }
 
 .bars {
-  display: flex;
-  align-items: flex-end;
-  gap: 1px;
+  display: block;
+  width: 100%;
   height: 64px;
 }
 
 .bar-hit {
-  display: flex;
-  flex: 1;
-  align-items: flex-end;
-  min-width: 0;
-  height: 100%;
-  padding: 0;
-  border: 0;
-  background: none;
   cursor: pointer;
+  outline: none;
 }
 
-.bar {
-  display: block;
-  width: 100%;
-  border-radius: 1px 1px 0 0;
+/* Bars are only a few pixels wide, so a border would hide their colour: tint the whole column instead. */
+.bar-slot {
+  fill: transparent;
 }
 
-.bar-hit[aria-current='true'] .bar {
-  outline: 2px solid #202124;
+.bar-hit[aria-current='true'] .bar-slot {
+  fill: rgb(32 33 36 / 0.18);
+}
+
+.bar-hit:focus-visible .bar-slot {
+  fill: rgb(26 115 232 / 0.3);
 }
 
 .day-chart .ticks {

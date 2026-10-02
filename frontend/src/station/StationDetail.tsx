@@ -13,7 +13,8 @@ interface Props {
 
 export function StationDetail({ station, profile, slot, mode, compact, onSlot }: Props) {
   const probs = probabilities(profile, station.id, mode);
-  const count = counts(profile, station.id, mode)[slot];
+  const typical = counts(profile, station.id, mode);
+  const count = typical[slot];
   const p = probs[slot];
   const bikes = mode === 'bikes';
   return (
@@ -28,7 +29,15 @@ export function StationDetail({ station, profile, slot, mode, compact, onSlot }:
         </p>
       )}
       <p className="muted">Capacity {station.capacity}</p>
-      <DayChart values={probs} slot={slot} compact={compact} onSelect={onSlot} />
+      <DayChart
+        counts={typical}
+        chances={probs}
+        capacity={station.capacity}
+        mode={mode}
+        slot={slot}
+        compact={compact}
+        onSelect={onSlot}
+      />
     </div>
   );
 }

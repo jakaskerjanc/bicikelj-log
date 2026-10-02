@@ -12,6 +12,8 @@
     "fake-data": "node scripts/fake-data.mjs"
   },
   "dependencies": {
+    "@visx/scale": "^4.0.0",
+    "@visx/shape": "^4.0.0",
     "mapbox-gl": "^3.32.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
