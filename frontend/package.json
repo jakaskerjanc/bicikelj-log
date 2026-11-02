@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "TZ=America/New_York vitest run",
     "fake-data": "node scripts/fake-data.mjs"
   },
   "dependencies": {
