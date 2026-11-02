@@ -1,18 +1,52 @@
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
+import type { Feature, FeatureCollection, LineString, Point } from 'geojson';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { BUCKET_COLORS, NO_DATA_COLOR, THRESHOLDS } from '../data/colors';
 import { stationFeatureStates, stationsGeoJson } from '../data/stations';
 import type { Meta, Mode, Profile } from '../data/types';
+import { LJUBLJANA_BOUNDARY } from '../trip/boundary';
+import type { LngLat, TripResult } from '../trip/types';
 
 const SOURCE = 'stations';
 const LAYER = 'stations';
+const ROUTE = 'route';
+const ENDPOINTS = 'endpoints';
+const BOUNDARY = 'boundary';
 const LJUBLJANA: [number, number] = [14.5058, 46.0569];
 /** Feature-state value for "no data": below every threshold, so `step` maps it to the grey output. */
 const NO_DATA_P = -1;
 /** About half the desktop popup's height: the dot sits this far below centre so dot + popup are centred together. */
 const POPUP_HALF_HEIGHT = 110;
+/** Opacity of the stations that are not part of the trip being shown. */
+const FADED_OPACITY = 0.25;
+
+type RoutedTrip = Extract<TripResult, { kind: 'bike' | 'walk' }>;
+
+/** The trip when it has a route to draw; a no-station result and no trip at all both give null. */
+const routed = (trip: TripResult | null): RoutedTrip | null => (trip && trip.kind !== 'no-station' ? trip : null);
+
+const FADED = ['boolean', ['feature-state', 'faded'], false] as const;
+
+function routeGeoJson(trip: RoutedTrip | null): FeatureCollection<LineString, { leg: 'walk' | 'bike' }> {
+  return {
+    type: 'FeatureCollection',
+    features: (trip?.legs ?? []).map((leg) => ({
+      type: 'Feature',
+      geometry: leg.geometry,
+      properties: { leg: leg.mode },
+    })),
+  };
+}
+
+function endpointsGeoJson(from: LngLat | null, to: LngLat | null): FeatureCollection<Point, { role: 'from' | 'to' }> {
+  const features: Feature<Point, { role: 'from' | 'to' }>[] = [];
+  for (const [role, at] of [['from', from], ['to', to]] as const) {
+    if (at) features.push({ type: 'Feature', geometry: { type: 'Point', coordinates: [at.lon, at.lat] }, properties: { role } });
+  }
+  return { type: 'FeatureCollection', features };
+}
 
 export interface StationMapProps {
   token: string;
@@ -24,18 +58,44 @@ export interface StationMapProps {
   onSelect: (id: string | null) => void;
   popup: ReactNode; // desktop popup content; null on mobile
   compact: boolean;
+  /** The planned trip to draw; every station not on it is faded. */
+  trip: TripResult | null;
+  endpoints: { from: LngLat | null; to: LngLat | null };
+  showBoundary: boolean;
+  /** When set, a map click picks that point instead of selecting a station. */
+  onPick: ((at: LngLat) => void) | null;
 }
 
-export function StationMap({ token, meta, profile, slot, mode, selectedId, onSelect, popup, compact }: StationMapProps) {
+export function StationMap({
+  token,
+  meta,
+  profile,
+  slot,
+  mode,
+  selectedId,
+  onSelect,
+  popup,
+  compact,
+  trip,
+  endpoints,
+  showBoundary,
+  onPick,
+}: StationMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const onSelectRef = useRef(onSelect);
+  const onPickRef = useRef(onPick);
+  const tripRef = useRef(trip);
+  const selectedIdRef = useRef(selectedId);
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
   const [popupNode, setPopupNode] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
     onSelectRef.current = onSelect;
+    onPickRef.current = onPick;
+    tripRef.current = trip;
+    selectedIdRef.current = selectedId;
   });
 
   // Create the map once per token.
@@ -60,6 +120,11 @@ export function StationMap({ token, meta, profile, slot, mode, selectedId, onSel
       if ((e.error as { status?: number } | undefined)?.status === 401) setFailed(true); // token rejected
     });
     map.on('click', (e) => {
+      if (onPickRef.current) {
+        onPickRef.current({ lon: e.lngLat.lng, lat: e.lngLat.lat });
+        return;
+      }
+      if (routed(tripRef.current)) return; // the trip's stations are not selectable
       const hit = map.getLayer(LAYER) ? map.queryRenderedFeatures(e.point, { layers: [LAYER] })[0] : undefined;
       onSelectRef.current(hit ? String(hit.properties?.id) : null);
     });
@@ -100,6 +165,54 @@ export function StationMap({ token, meta, profile, slot, mode, selectedId, onSel
         'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, 5, 16, 11],
         'circle-stroke-color': ['case', ['boolean', ['feature-state', 'selected'], false], '#202124', '#ffffff'],
         'circle-stroke-width': ['case', ['boolean', ['feature-state', 'selected'], false], 3, 1.5],
+        'circle-opacity': ['case', FADED, FADED_OPACITY, 1],
+        'circle-stroke-opacity': ['case', FADED, FADED_OPACITY, 1],
+      },
+    });
+    // The overlays go around the stations: boundary and route underneath, endpoints on top.
+    map.addSource(BOUNDARY, { type: 'geojson', data: LJUBLJANA_BOUNDARY });
+    map.addLayer(
+      {
+        id: BOUNDARY,
+        type: 'line',
+        source: BOUNDARY,
+        layout: { visibility: 'none' },
+        paint: { 'line-color': '#5f6368', 'line-opacity': 0.6, 'line-width': 2, 'line-dasharray': [2, 2] },
+      },
+      LAYER,
+    );
+    map.addSource(ROUTE, { type: 'geojson', data: routeGeoJson(null) });
+    map.addLayer(
+      {
+        id: 'route-walk',
+        type: 'line',
+        source: ROUTE,
+        filter: ['==', ['get', 'leg'], 'walk'],
+        layout: { 'line-cap': 'round' },
+        paint: { 'line-color': '#5f6368', 'line-width': 3, 'line-dasharray': [0.5, 2] },
+      },
+      LAYER,
+    );
+    map.addLayer(
+      {
+        id: 'route-bike',
+        type: 'line',
+        source: ROUTE,
+        filter: ['==', ['get', 'leg'], 'bike'],
+        paint: { 'line-color': '#0b7a75', 'line-width': 5 },
+      },
+      LAYER,
+    );
+    map.addSource(ENDPOINTS, { type: 'geojson', data: endpointsGeoJson(null, null) });
+    map.addLayer({
+      id: ENDPOINTS,
+      type: 'circle',
+      source: ENDPOINTS,
+      paint: {
+        'circle-radius': 7,
+        'circle-color': ['match', ['get', 'role'], 'from', '#1a73e8', '#d93025'],
+        'circle-stroke-color': '#ffffff',
+        'circle-stroke-width': 2,
       },
     });
     map.on('mouseenter', LAYER, () => {
@@ -113,14 +226,59 @@ export function StationMap({ token, meta, profile, slot, mode, selectedId, onSel
     map.fitBounds(bounds, { padding: 40, duration: 0 });
   }, [loaded, meta]);
 
-  // Recolour on every day/slot/mode change: feature-state only, the source is never rebuilt.
+  // Recolour on every day/slot/mode/trip change: feature-state only, the source is never rebuilt.
+  // While a trip is shown every station is faded, except the bike pickup and drop-off, which show their odds.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loaded || !meta || !map.getSource(SOURCE)) return;
-    for (const { id, p } of stationFeatureStates(meta, profile, slot, mode)) {
-      map.setFeatureState({ source: SOURCE, id }, { p: p ?? NO_DATA_P });
+    const shown = routed(trip);
+    const highlighted = new Map<string, number>(); // station id -> p
+    if (shown?.kind === 'bike') {
+      for (const { station, chance } of [shown.pickup, shown.dropoff]) {
+        highlighted.set(station.id, chance === null ? NO_DATA_P : 1 - chance);
+      }
     }
-  }, [loaded, meta, profile, slot, mode]);
+    for (const { id, p } of stationFeatureStates(meta, profile, slot, mode)) {
+      const tripP = highlighted.get(id);
+      map.setFeatureState(
+        { source: SOURCE, id },
+        tripP === undefined ? { p: p ?? NO_DATA_P, faded: shown !== null } : { p: tripP, faded: false, selected: true },
+      );
+    }
+    return () => {
+      if (mapRef.current !== map) return;
+      for (const id of highlighted.keys()) {
+        map.setFeatureState({ source: SOURCE, id }, { selected: id === selectedIdRef.current });
+      }
+    };
+  }, [loaded, meta, profile, slot, mode, trip]);
+
+  // Draw the trip's route, and fit the map to it once per new result (not on every recolour).
+  useEffect(() => {
+    const map = mapRef.current;
+    const source = map?.getSource<mapboxgl.GeoJSONSource>(ROUTE);
+    if (!map || !loaded || !meta || !source) return;
+    const shown = routed(trip);
+    source.setData(routeGeoJson(shown));
+    if (!shown) return;
+    const bounds = new mapboxgl.LngLatBounds();
+    for (const leg of shown.legs) {
+      for (const [lon, lat] of leg.geometry.coordinates) bounds.extend([lon, lat]);
+    }
+    map.fitBounds(bounds, { padding: 60 });
+  }, [loaded, meta, trip]);
+
+  useEffect(() => {
+    const source = mapRef.current?.getSource<mapboxgl.GeoJSONSource>(ENDPOINTS);
+    if (!loaded || !meta || !source) return;
+    source.setData(endpointsGeoJson(endpoints.from, endpoints.to));
+  }, [loaded, meta, endpoints.from, endpoints.to]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loaded || !meta || !map.getLayer(BOUNDARY)) return;
+    map.setLayoutProperty(BOUNDARY, 'visibility', showBoundary ? 'visible' : 'none');
+  }, [loaded, meta, showBoundary]);
 
   // Selection: outline and centre the station; desktop also opens a popup, mobile has the sheet below.
   useEffect(() => {

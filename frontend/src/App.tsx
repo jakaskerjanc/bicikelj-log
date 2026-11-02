@@ -39,6 +39,10 @@ export function App({ baseUrl, mapboxToken, initialDay, initialSlot }: Props) {
         onSelect={setSelectedId}
         popup={desktop ? detail : null}
         compact={!desktop}
+        trip={null}
+        endpoints={{ from: null, to: null }}
+        showBoundary={false}
+        onPick={null}
       />
       {!desktop && detail && <BottomSheet onClose={() => setSelectedId(null)}>{detail}</BottomSheet>}
       <TypicalPanel
