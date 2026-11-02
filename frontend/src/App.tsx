@@ -83,7 +83,9 @@ export function App({ baseUrl, mapboxToken, initialDay, initialSlot, now: initia
   }));
   const [tripOpen, setTripOpen] = useState(false);
   const [pickTarget, setPickTarget] = useState<'from' | 'to' | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  // The id makes each notice a new object, so two identical ones each get the full time on screen.
+  const [notice, setNotice] = useState<{ text: string; id: number } | null>(null);
+  const showNotice = useCallback((text: string) => setNotice((prev) => ({ text, id: (prev?.id ?? 0) + 1 })), []);
 
   const [topCardRef, topCardHeight] = useHeight();
   const fitPadding = useMemo(
@@ -103,10 +105,11 @@ export function App({ baseUrl, mapboxToken, initialDay, initialSlot, now: initia
   const endpoints = useMemo(() => ({ from: fromAt, to: toAt }), [fromAt, toAt]);
   const showBoundary = (!desktop && tripOpen) || pickTarget !== null || fromAt !== null || toAt !== null;
 
-  // A station outline left over from before the trip would sit on a trip station.
+  // A station outline left over from before the trip would sit on a trip station, and a selected station
+  // would bring its sheet back up once the trip is closed.
   useEffect(() => {
-    if (tripResult) setSelectedId(null);
-  }, [tripResult]);
+    if (planning) setSelectedId(null);
+  }, [planning, tripResult]);
 
   useEffect(() => {
     if (!notice) return;
@@ -118,19 +121,20 @@ export function App({ baseUrl, mapboxToken, initialDay, initialSlot, now: initia
     (at: LngLat) => {
       if (!pickTarget) return;
       if (!insideLjubljana(at)) {
-        setNotice('Pick a point inside Ljubljana');
+        showNotice('Pick a point inside Ljubljana');
         return;
       }
       setTripInputs((prev) => ({ ...prev, [pickTarget]: { name: 'Point on map', detail: '', at } }));
       setPickTarget(null);
     },
-    [pickTarget],
+    [pickTarget, showNotice],
   );
 
   const closeTrip = () => {
     setTripInputs((prev) => ({ ...prev, from: null, to: null }));
     setPickTarget(null);
     setTripOpen(false);
+    setSelectedId(null);
   };
 
   const station = meta?.stations.find((s) => s.id === selectedId) ?? null;
@@ -177,7 +181,7 @@ export function App({ baseUrl, mapboxToken, initialDay, initialSlot, now: initia
       stations={meta?.stations ?? []}
       token={mapboxToken}
       now={now}
-      onNotice={setNotice}
+      onNotice={showNotice}
     >
       {children}
     </TripSearch>
@@ -216,7 +220,7 @@ export function App({ baseUrl, mapboxToken, initialDay, initialSlot, now: initia
       )}
       {notice && (
         <div role="alert" className="toast">
-          {notice}
+          {notice.text}
         </div>
       )}
     </div>

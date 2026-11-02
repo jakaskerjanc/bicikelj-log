@@ -253,6 +253,50 @@ describe('App', () => {
       });
     });
 
+    it('clears a selected station when planning starts, so closing the trip does not bring its sheet back', async () => {
+      setViewport('mobile');
+      renderApp();
+      await waitReady();
+      await userEvent.click(screen.getByRole('button', { name: 'select station 1' }));
+      expect(screen.getByRole('dialog', { name: 'Station details' })).toBeInTheDocument();
+      await planTrip();
+      expect(screen.getByText('Planning…')).toBeInTheDocument(); // closed before any result arrives
+      await userEvent.click(screen.getByRole('button', { name: 'Close trip' }));
+      expect(screen.queryByRole('dialog', { name: 'Station details' })).not.toBeInTheDocument();
+    });
+
+    it('clears a station selected during planning when the trip is closed', async () => {
+      setViewport('mobile');
+      renderApp();
+      await waitReady();
+      await planTrip();
+      await waitFor(() => expect(tripKind()).not.toHaveTextContent('none'));
+      await userEvent.click(screen.getByRole('button', { name: 'select station 1' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Close trip' }));
+      expect(screen.queryByRole('dialog', { name: 'Station details' })).not.toBeInTheDocument();
+    });
+
+    it('gives a repeated notice its full time on screen again', async () => {
+      setViewport('mobile');
+      renderApp();
+      await waitReady();
+      await userEvent.click(screen.getByRole('button', { name: 'Where to?' }));
+      await chooseOnMap('To');
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        const outside = screen.getByRole('button', { name: 'pick outside' });
+        fireEvent.click(outside);
+        act(() => vi.advanceTimersByTime(2000));
+        fireEvent.click(outside); // the same text again
+        act(() => vi.advanceTimersByTime(2000)); // 4 s after the first, 2 s after the second
+        expect(screen.getByRole('alert')).toHaveTextContent('Pick a point inside Ljubljana');
+        act(() => vi.advanceTimersByTime(1000));
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     describe('fit padding', () => {
       const fitPadding = () => JSON.parse(screen.getByTestId('map').dataset.fitPadding!);
 

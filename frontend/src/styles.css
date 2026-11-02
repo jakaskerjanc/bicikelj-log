@@ -369,6 +369,11 @@ body,
   left: 12px;
   right: 12px;
   z-index: 2;
+  pointer-events: none; /* the strip beside the pill must not swallow map taps and drags */
+}
+
+.trip-top > * {
+  pointer-events: auto;
 }
 
 .trip-dock {

@@ -263,6 +263,38 @@ describe('selectStations', () => {
     });
   });
 
+  describe('with no usable station', () => {
+    const profiles = everyDay({ pick: {}, drop: {} });
+
+    it('walks when the trip is short enough to walk, whichever end lacks a station', () => {
+      // 400 m apart: about 6 minutes on foot.
+      expect(selectStations(leaveAt('08:00', at(0), at(400)), [], profiles, NO_HOLIDAYS)).toEqual({ kind: 'walk' });
+      expect(selectStations(leaveAt('08:00', at(0), at(400)), [station('far', 5000)], profiles, NO_HOLIDAYS)).toEqual({ kind: 'walk' });
+      // A station by the start only: nothing within 1 km of the end.
+      expect(selectStations(leaveAt('08:00', at(0), at(400)), [station('pick', -900)], profiles, NO_HOLIDAYS)).toEqual({ kind: 'walk' });
+    });
+
+    it('walks when every candidate station lacks data but the trip is short', () => {
+      const noData = everyDay({ pick: { pEmpty: null }, drop: { pEmpty: null } });
+      const stations = [station('pick', 100), station('drop', 300)];
+      expect(selectStations(leaveAt('08:00', at(0), at(400)), stations, noData, NO_HOLIDAYS)).toEqual({ kind: 'walk' });
+    });
+
+    it('keeps reporting the missing end once walking would take over 20 minutes', () => {
+      // 1500 m * 1.3 / (4.8 km/h) = 1462 s.
+      expect(selectStations(leaveAt('08:00', at(0), at(1500)), [], profiles, NO_HOLIDAYS)).toEqual({ kind: 'no-station', end: 'start' });
+    });
+
+    it('draws the line at 20 minutes of walking', () => {
+      const metresFor = (seconds: number) => (seconds * WALK_MPS) / DETOUR;
+      expect(selectStations(leaveAt('08:00', at(0), at(metresFor(1199))), [], profiles, NO_HOLIDAYS)).toEqual({ kind: 'walk' });
+      expect(selectStations(leaveAt('08:00', at(0), at(metresFor(1210))), [], profiles, NO_HOLIDAYS)).toEqual({
+        kind: 'no-station',
+        end: 'start',
+      });
+    });
+  });
+
   it('walks when the destination is so close that biking cannot beat it', () => {
     const stations = [station('pick', 20), station('drop', 130)];
     const profiles = everyDay({ pick: {}, drop: {} });

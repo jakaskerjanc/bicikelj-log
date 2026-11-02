@@ -14,6 +14,8 @@ export const WALK_MPS = 4.8 / 3.6;
 export const BIKE_MPS = 15 / 3.6;
 export const UNLOCK_S = 60;
 export const DOCK_S = 60;
+/** With no usable station, a trip whose walking estimate is within this is planned on foot instead. */
+export const SHORT_WALK_S = 20 * 60;
 /** A pickup or drop-off chance at or above this counts as acceptable. */
 export const THRESHOLD: Record<Risk, number> = { safe: 0.9, risky: 0.5 };
 
@@ -49,6 +51,10 @@ const totalSeconds = ({ walk1, ride, walk2 }: LegSeconds) => walk1 + UNLOCK_S + 
 
 const walkSeconds = (a: LngLat, b: LngLat) => (distanceM(a, b) * DETOUR) / WALK_MPS;
 const rideSeconds = (a: LngLat, b: LngLat) => (distanceM(a, b) * DETOUR) / BIKE_MPS;
+
+/** No usable station at `end`: walk if that is quick enough, otherwise say so. */
+const noStation = (q: SelectQuery, end: 'start' | 'end'): Selection =>
+  walkSeconds(q.from, q.to) <= SHORT_WALK_S ? { kind: 'walk' } : { kind: 'no-station', end };
 
 /**
  * When you pick the bike up, drop it off, and arrive. `time` is the departure for 'leave' and the arrival
@@ -123,8 +129,8 @@ export function selectStations(
 ): Selection {
   const pickups = stations.filter((s) => distanceM(q.from, s) <= MAX_WALK_M);
   const dropoffs = stations.filter((s) => distanceM(q.to, s) <= MAX_WALK_M);
-  if (pickups.length === 0) return { kind: 'no-station', end: 'start' };
-  if (dropoffs.length === 0) return { kind: 'no-station', end: 'end' };
+  if (pickups.length === 0) return noStation(q, 'start');
+  if (dropoffs.length === 0) return noStation(q, 'end');
 
   const pairs = pickups.flatMap((pickup) =>
     dropoffs.filter((dropoff) => dropoff.id !== pickup.id).map((dropoff) => ({ pickup, dropoff })),
@@ -147,7 +153,7 @@ export function selectStations(
     if (pickupChance === null || dropoffChance === null) continue;
     candidates.push({ pickup, dropoff, estimate, total: totalSeconds(estimate), pickupChance, dropoffChance });
   }
-  if (candidates.length === 0) return { kind: 'no-station', end: anyPickupData ? 'end' : 'start' };
+  if (candidates.length === 0) return noStation(q, anyPickupData ? 'end' : 'start');
 
   const minimum = THRESHOLD[q.risk];
   const acceptable = candidates.filter((c) => c.pickupChance >= minimum && c.dropoffChance >= minimum);
