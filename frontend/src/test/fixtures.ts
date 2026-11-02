@@ -5,6 +5,7 @@ export const BASE_URL = 'https://data.example/typical/v1/';
 
 export const META: Meta = {
   generated_at: '2026-10-01T01:30:00Z',
+  holidays: [],
   stations: [
     { id: '1', name: 'PREŠERNOV TRG-PETKOVŠKOVO NABREŽJE', lat: 46.0514, lon: 14.506, capacity: 20 },
     { id: '2', name: 'KONGRESNI TRG-ŠUBIČEVA ULICA', lat: 46.05, lon: 14.503, capacity: 22 },

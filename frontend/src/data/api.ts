@@ -30,6 +30,13 @@ function isStation(x: unknown): x is Station {
   );
 }
 
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Planner-only field: tolerate anything wrong with it rather than failing the whole map. */
+function parseHolidays(x: unknown): string[] {
+  return Array.isArray(x) ? x.filter((d): d is string => typeof d === 'string' && ISO_DATE.test(d)) : [];
+}
+
 export function parseMeta(x: unknown): Meta {
   if (!isObject(x) || typeof x.generated_at !== 'string' || !Array.isArray(x.stations) || !x.stations.every(isStation)) {
     throw new DataError('meta.json: unexpected shape');
@@ -37,6 +44,7 @@ export function parseMeta(x: unknown): Meta {
   return {
     generated_at: x.generated_at,
     stations: x.stations.map(({ id, name, lat, lon, capacity }) => ({ id, name, lat, lon, capacity })),
+    holidays: parseHolidays(x.holidays),
   };
 }
 

@@ -12,6 +12,19 @@ describe('parseMeta', () => {
     const bad = { ...META, stations: [{ id: '1', name: 'X', capacity: 20 }] };
     expect(() => parseMeta(bad)).toThrow(DataError);
   });
+
+  it('gives an empty holidays list when the field is missing', () => {
+    const { holidays: _omitted, ...withoutHolidays } = META;
+    expect(parseMeta(withoutHolidays).holidays).toEqual([]);
+  });
+
+  it('keeps well-formed holiday dates and drops the rest without failing', () => {
+    expect(parseMeta({ ...META, holidays: ['2026-12-25', 7, 'nope'] }).holidays).toEqual(['2026-12-25']);
+  });
+
+  it('treats a non-array holidays field as no holidays', () => {
+    expect(parseMeta({ ...META, holidays: 'christmas' }).holidays).toEqual([]);
+  });
 });
 
 describe('parseProfile', () => {
