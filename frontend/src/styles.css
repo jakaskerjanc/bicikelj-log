@@ -615,6 +615,20 @@ body,
 .trip-chance {
   font-size: 13px;
   font-weight: 600;
+  color: #202124;
+}
+
+.trip-chance-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  border-radius: 50%;
+}
+
+.trip-chance.warn,
+.trip-note.warn {
+  color: #a3201d;
 }
 
 .trip-chance.warn::before {

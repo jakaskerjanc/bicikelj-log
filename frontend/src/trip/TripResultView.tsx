@@ -22,10 +22,11 @@ function chanceLabel(noun: 'Bike' | 'Free dock', chance: number | null): string 
 
 function Chance({ noun, odds }: { noun: 'Bike' | 'Free dock'; odds: StationOdds }) {
   return (
-    <span
-      className={odds.acceptable ? 'trip-chance' : 'trip-chance warn'}
-      style={odds.chance === null ? undefined : { color: colorFor(1 - odds.chance) }}
-    >
+    <span className={odds.acceptable ? 'trip-chance' : 'trip-chance warn'}>
+      {/* The bucket colour sits on a dot: as text colour, the yellow would be unreadable on white. */}
+      {odds.chance !== null && (
+        <span className="trip-chance-dot" aria-hidden="true" style={{ backgroundColor: colorFor(1 - odds.chance) }} />
+      )}
       {chanceLabel(noun, odds.chance)}
     </span>
   );

@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
+import { colorFor } from '../data/colors';
 import { META } from '../test/fixtures';
 import type { Leg, Place, StationOdds, TripInputs, TripResult } from './types';
 import { TripResultView } from './TripResultView';
@@ -169,5 +170,21 @@ describe('TripResultView', () => {
       render(<TripResultView state={ready(bike())} inputs={INPUTS} now={NOW} />);
       expect(screen.queryByText('This time has already passed.')).not.toBeInTheDocument();
     });
+  });
+
+  it('shows the chance as a coloured dot while the label keeps the text colour', () => {
+    render(<TripResultView state={ready(bike())} inputs={INPUTS} now={NOW} />);
+    const bikeChance = screen.getByText('Bike likely · 9 in 10');
+    const dot = bikeChance.querySelector('.trip-chance-dot');
+    expect(dot).toHaveAttribute('aria-hidden', 'true');
+    expect(dot).toHaveStyle({ backgroundColor: colorFor(1 - 0.95) });
+    expect(bikeChance).not.toHaveStyle({ color: colorFor(1 - 0.95) });
+    const dockDot = screen.getByText('Free dock unlikely · 4 in 10').querySelector('.trip-chance-dot');
+    expect(dockDot).toHaveStyle({ backgroundColor: colorFor(1 - 0.4) });
+  });
+
+  it('has no dot when the chance is unknown', () => {
+    render(<TripResultView state={ready(bike({ pickup: odds(0, null, false) }))} inputs={INPUTS} now={NOW} />);
+    expect(screen.getByText('Bike chance unknown').querySelector('.trip-chance-dot')).toBeNull();
   });
 });
