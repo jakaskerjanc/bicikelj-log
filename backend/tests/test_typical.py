@@ -248,6 +248,7 @@ def test_meta_document():
     assert json.dumps(meta["k"]) == "2"  # contract says "k": 2, not 2.0
     assert meta["profiles"]["mon"] == {"days_used": 1.7}
     assert list(meta["profiles"]) == ["mon", "tue", "wed", "thu", "fri", "sat", "sun", "holiday"]
+    assert meta["holidays"][0] == "2026-10-31"
     assert meta["stations"][0]["id"] == "1"
 
 
