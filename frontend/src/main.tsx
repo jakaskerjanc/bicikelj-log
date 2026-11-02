@@ -5,10 +5,11 @@ import { DATA_BASE_URL, MAPBOX_TOKEN } from './config';
 import { nowInLjubljana } from './data/slots';
 import './styles.css';
 
-const now = nowInLjubljana();
+const now = new Date();
+const ljubljana = nowInLjubljana(now);
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App baseUrl={DATA_BASE_URL} mapboxToken={MAPBOX_TOKEN} initialDay={now.day} initialSlot={now.slot} />
+    <App baseUrl={DATA_BASE_URL} mapboxToken={MAPBOX_TOKEN} initialDay={ljubljana.day} initialSlot={ljubljana.slot} now={now} />
   </StrictMode>,
 );
