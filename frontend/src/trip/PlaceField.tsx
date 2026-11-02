@@ -36,6 +36,14 @@ export function PlaceField({ label, value, onChange, stations, token, allowMyLoc
   const [text, setText] = useState<string | null>(null); // null: show the chosen place
   const [open, setOpen] = useState(false);
   const [outcome, setOutcome] = useState<SearchOutcome | null>(null);
+  // Numbers the location requests; a fix only counts while its number is still the latest.
+  const fixRequest = useRef(0);
+  useEffect(() => {
+    const requests = fixRequest;
+    return () => {
+      requests.current++; // unmounted: whatever fix is still on its way is dropped
+    };
+  }, []);
 
   const query = (text ?? '').trim();
   const searchable = open && query.length >= MIN_SEARCH_CHARS;
@@ -62,6 +70,7 @@ export function PlaceField({ label, value, onChange, stations, token, allowMyLoc
       onNotice(OUTSIDE_NOTICE);
       return;
     }
+    fixRequest.current++; // a deliberate choice beats a fix still on its way
     onChange(place);
     setText(null);
     setOpen(false);
@@ -74,13 +83,17 @@ export function PlaceField({ label, value, onChange, stations, token, allowMyLoc
       onNotice("Couldn't get your location");
       return;
     }
+    const request = ++fixRequest.current;
     navigator.geolocation.getCurrentPosition(
       ({ coords }) => {
+        if (request !== fixRequest.current) return;
         const at: LngLat = { lon: coords.longitude, lat: coords.latitude };
         if (insideLjubljana(at)) onChange({ name: 'My location', detail: '', at });
         else onNotice(OUTSIDE_NOTICE);
       },
-      () => onNotice("Couldn't get your location"),
+      () => {
+        if (request === fixRequest.current) onNotice("Couldn't get your location");
+      },
     );
   };
 

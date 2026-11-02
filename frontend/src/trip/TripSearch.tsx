@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { Station } from '../data/types';
 import { PlaceField } from './PlaceField';
 import { formatDateOption, tripDates } from './time';
@@ -6,7 +6,8 @@ import type { Risk, TimeMode, TripInputs } from './types';
 
 export interface TripSearchProps {
   inputs: TripInputs;
-  onInputs: (next: TripInputs) => void;
+  /** Takes an updater, not a value: a place can arrive (a location fix) after other inputs changed. */
+  onInputs: (update: (prev: TripInputs) => TripInputs) => void;
   open: boolean;
   onOpen: () => void;
   /** Clears the trip. */
@@ -48,6 +49,8 @@ export function TripSearch({
   onNotice,
   children,
 }: TripSearchProps) {
+  // Closing remounts the fields, which drops a location fix that is still on its way.
+  const [closes, setCloses] = useState(0);
   if (collapsible && !open) {
     return (
       <button type="button" className="trip-pill" onClick={onOpen}>
@@ -61,9 +64,10 @@ export function TripSearch({
   const options = dates.includes(inputs.date) ? dates : [inputs.date, ...dates];
   const field = (which: 'from' | 'to') => (
     <PlaceField
+      key={`${which}-${closes}`}
       label={which === 'from' ? 'From' : 'To'}
       value={inputs[which]}
-      onChange={(place) => onInputs({ ...inputs, [which]: place })}
+      onChange={(place) => onInputs((prev) => ({ ...prev, [which]: place }))}
       stations={stations}
       token={token}
       allowMyLocation={which === 'from'}
@@ -83,11 +87,16 @@ export function TripSearch({
           type="button"
           className="trip-icon-btn"
           aria-label="Swap"
-          onClick={() => onInputs({ ...inputs, from: inputs.to, to: inputs.from })}
+          onClick={() => onInputs((prev) => ({ ...prev, from: prev.to, to: prev.from }))}
         >
           ⇅
         </button>
-        <button type="button" className="trip-icon-btn" aria-label="Close trip" onClick={onClose}>
+        <button type="button" className="trip-icon-btn" aria-label="Close trip"
+          onClick={() => {
+            setCloses((n) => n + 1);
+            onClose();
+          }}
+        >
           ×
         </button>
       </div>
@@ -103,7 +112,7 @@ export function TripSearch({
               key={m.mode}
               type="button"
               aria-pressed={inputs.timeMode === m.mode}
-              onClick={() => onInputs({ ...inputs, timeMode: m.mode })}
+              onClick={() => onInputs((prev) => ({ ...prev, timeMode: m.mode }))}
             >
               {m.label}
             </button>
@@ -115,13 +124,19 @@ export function TripSearch({
           className="trip-time"
           aria-label="Time"
           value={inputs.time}
-          onChange={(e) => onInputs({ ...inputs, time: e.target.value })}
+          onChange={(e) => {
+            const time = e.target.value;
+            onInputs((prev) => ({ ...prev, time }));
+          }}
         />
         <select
           className="trip-date"
           aria-label="Date"
           value={inputs.date}
-          onChange={(e) => onInputs({ ...inputs, date: e.target.value })}
+          onChange={(e) => {
+            const date = e.target.value;
+            onInputs((prev) => ({ ...prev, date }));
+          }}
         >
           {options.map((d) => (
             <option key={d} value={d}>
@@ -135,7 +150,7 @@ export function TripSearch({
               key={r.risk}
               type="button"
               aria-pressed={inputs.risk === r.risk}
-              onClick={() => onInputs({ ...inputs, risk: r.risk })}
+              onClick={() => onInputs((prev) => ({ ...prev, risk: r.risk }))}
             >
               {r.label}
             </button>

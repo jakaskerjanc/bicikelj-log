@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -61,6 +62,13 @@ function setup(overrides: Partial<TripSearchProps> = {}) {
   return { props, user, unmount };
 }
 
+/** The inputs the n-th onInputs update (the last by default) produces from the props' inputs. */
+const applied = (props: TripSearchProps, n = -1): TripInputs => {
+  const call = vi.mocked(props.onInputs).mock.calls.at(n);
+  if (!call) throw new Error('onInputs was not called');
+  return call[0](props.inputs);
+};
+
 function stubGeolocation(lon: number, lat: number) {
   const getCurrentPosition = vi.fn((success: PositionCallback) =>
     success({ coords: { longitude: lon, latitude: lat } } as GeolocationPosition),
@@ -112,9 +120,7 @@ describe('TripSearch', () => {
     await user.type(screen.getByRole('textbox', { name: 'To' }), 'pres');
     const option = screen.getByRole('option', { name: /Prešernov Trg-Petkovškovo Nabrežje/ });
     await user.click(option);
-    expect(props.onInputs).toHaveBeenCalledWith(
-      expect.objectContaining({ to: expect.objectContaining({ name: 'Prešernov Trg-Petkovškovo Nabrežje' }) }),
-    );
+    expect(applied(props)).toEqual(expect.objectContaining({ to: expect.objectContaining({ name: 'Prešernov Trg-Petkovškovo Nabrežje' }) }));
   });
 
   it('Enter on a focused option chooses it', async () => {
@@ -124,9 +130,7 @@ describe('TripSearch', () => {
     expect(document.activeElement).toHaveAttribute('role', 'option');
     expect(document.activeElement).toHaveTextContent('Kongresni');
     await user.keyboard('{Enter}');
-    expect(props.onInputs).toHaveBeenCalledWith(
-      expect.objectContaining({ to: expect.objectContaining({ name: 'Kongresni Trg-Šubičeva Ulica' }) }),
-    );
+    expect(applied(props)).toEqual(expect.objectContaining({ to: expect.objectContaining({ name: 'Kongresni Trg-Šubičeva Ulica' }) }));
   });
 
   it('lists My location only for From, then Choose on map', async () => {
@@ -186,9 +190,7 @@ describe('TripSearch', () => {
     await user.type(screen.getByRole('textbox', { name: 'To' }), 'grad');
     await vi.advanceTimersByTimeAsync(400);
     await user.click(await screen.findByRole('option', { name: /Ljubljana Castle/ }));
-    expect(props.onInputs).toHaveBeenCalledWith(
-      expect.objectContaining({ to: { name: 'Ljubljana Castle', detail: 'Ljubljana', at: { lon: 14.5086, lat: 46.0488 } } }),
-    );
+    expect(applied(props)).toEqual(expect.objectContaining({ to: { name: 'Ljubljana Castle', detail: 'Ljubljana', at: { lon: 14.5086, lat: 46.0488 } } }));
   });
 
   it('debounces: a keystroke inside the pause restarts the 400 ms wait', async () => {
@@ -261,9 +263,7 @@ describe('TripSearch', () => {
     const { props, user } = setup();
     await user.click(screen.getByRole('textbox', { name: 'From' }));
     await user.click(screen.getByRole('option', { name: 'My location' }));
-    expect(props.onInputs).toHaveBeenCalledWith(
-      expect.objectContaining({ from: { name: 'My location', detail: '', at: { lon: 14.5, lat: 46.05 } } }),
-    );
+    expect(applied(props)).toEqual(expect.objectContaining({ from: { name: 'My location', detail: '', at: { lon: 14.5, lat: 46.05 } } }));
   });
 
   it('My location outside Ljubljana shows a notice and sets nothing', async () => {
@@ -289,7 +289,7 @@ describe('TripSearch', () => {
   it('clearing the field clears the place', async () => {
     const { props, user } = setup({ inputs: { ...EMPTY, to: place('Office') } });
     await user.clear(screen.getByRole('textbox', { name: 'To' }));
-    expect(props.onInputs).toHaveBeenCalledWith(expect.objectContaining({ to: null }));
+    expect(applied(props)).toEqual(expect.objectContaining({ to: null }));
   });
 
   it('Arrive by and Risky update the inputs and reflect the current state', async () => {
@@ -297,9 +297,9 @@ describe('TripSearch', () => {
     expect(screen.getByRole('button', { name: 'Leave at' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: 'Safe' })).toHaveAttribute('aria-pressed', 'true');
     await user.click(screen.getByRole('button', { name: 'Arrive by' }));
-    expect(props.onInputs).toHaveBeenLastCalledWith({ ...EMPTY, timeMode: 'arrive' });
+    expect(applied(props)).toEqual({ ...EMPTY, timeMode: 'arrive' });
     await user.click(screen.getByRole('button', { name: 'Risky' }));
-    expect(props.onInputs).toHaveBeenLastCalledWith({ ...EMPTY, risk: 'risky' });
+    expect(applied(props)).toEqual({ ...EMPTY, risk: 'risky' });
   });
 
   it('time and date inputs update the inputs', async () => {
@@ -308,7 +308,7 @@ describe('TripSearch', () => {
     expect(time).toHaveAttribute('type', 'time');
     expect(time).toHaveValue('11:00');
     await userEvent.setup({ advanceTimers: vi.advanceTimersByTime.bind(vi) }).selectOptions(screen.getByLabelText('Date'), '2026-11-04');
-    expect(props.onInputs).toHaveBeenLastCalledWith({ ...EMPTY, date: '2026-11-04' });
+    expect(applied(props)).toEqual({ ...EMPTY, date: '2026-11-04' });
   });
 
   it('offers today and the next seven days', () => {
@@ -325,6 +325,85 @@ describe('TripSearch', () => {
     const to = place('B');
     const { props, user } = setup({ inputs: { ...EMPTY, from, to } });
     await user.click(screen.getByRole('button', { name: 'Swap' }));
-    expect(props.onInputs).toHaveBeenCalledWith({ ...EMPTY, from: to, to: from });
+    expect(applied(props)).toEqual({ ...EMPTY, from: to, to: from });
+  });
+
+  describe('a location fix that arrives late', () => {
+    /** A geolocation whose answer is delivered by the test. */
+    function deferredGeolocation() {
+      let deliver: PositionCallback | undefined;
+      vi.stubGlobal('navigator', { geolocation: { getCurrentPosition: (ok: PositionCallback) => (deliver = ok) } });
+      return () => act(() => deliver!({ coords: { longitude: 14.5, latitude: 46.05 } } as GeolocationPosition));
+    }
+
+    /** TripSearch holding its own inputs, like App does; Close trip clears the places. */
+    function Stateful() {
+      const [inputs, setInputs] = useState(EMPTY);
+      return (
+        <TripSearch
+          inputs={inputs}
+          onInputs={setInputs}
+          open
+          onOpen={vi.fn()}
+          onClose={() => setInputs((prev) => ({ ...prev, from: null, to: null }))}
+          collapsible={false}
+          pickTarget={null}
+          onPickTarget={vi.fn()}
+          stations={META.stations}
+          token="tok"
+          now={NOW}
+          onNotice={vi.fn()}
+        />
+      );
+    }
+
+    const tapMyLocation = async (user: ReturnType<typeof userEvent.setup>) => {
+      await user.click(screen.getByRole('textbox', { name: 'From' }));
+      await user.click(screen.getByRole('option', { name: 'My location' }));
+    };
+
+    it('does not overwrite what was edited meanwhile', async () => {
+      const deliver = deferredGeolocation();
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime.bind(vi) });
+      render(<Stateful />);
+      await tapMyLocation(user);
+      await user.click(screen.getByRole('button', { name: 'Arrive by' }));
+      await user.type(screen.getByRole('textbox', { name: 'To' }), 'kongres');
+      await user.click(screen.getByRole('option', { name: /Kongresni/ }));
+      deliver();
+      expect(screen.getByRole('textbox', { name: 'From' })).toHaveValue('My location');
+      expect(screen.getByRole('textbox', { name: 'To' })).toHaveValue('Kongresni Trg-Šubičeva Ulica');
+      expect(screen.getByRole('button', { name: 'Arrive by' })).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    it('is ignored once the trip was closed', async () => {
+      const deliver = deferredGeolocation();
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime.bind(vi) });
+      render(<Stateful />);
+      await tapMyLocation(user);
+      await user.click(screen.getByRole('button', { name: 'Close trip' }));
+      deliver();
+      expect(screen.getByRole('textbox', { name: 'From' })).toHaveValue('');
+    });
+
+    it('is ignored once the field is gone', async () => {
+      const deliver = deferredGeolocation();
+      const { props, user, unmount } = setup();
+      await tapMyLocation(user);
+      unmount();
+      deliver();
+      expect(props.onInputs).not.toHaveBeenCalled();
+    });
+
+    it('is ignored once another place was chosen for the field', async () => {
+      const deliver = deferredGeolocation();
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime.bind(vi) });
+      render(<Stateful />);
+      await tapMyLocation(user);
+      await user.type(screen.getByRole('textbox', { name: 'From' }), 'kongres');
+      await user.click(screen.getByRole('option', { name: /Kongresni/ }));
+      deliver();
+      expect(screen.getByRole('textbox', { name: 'From' })).toHaveValue('Kongresni Trg-Šubičeva Ulica');
+    });
   });
 });
