@@ -18,12 +18,35 @@ interface Props {
   mapboxToken: string;
   initialDay: Day;
   initialSlot: number;
+  /** The time at page load; the app keeps its own clock from here. */
   now: Date;
 }
 
 const NOTICE_MS = 3000;
+const CLOCK_REFRESH_MS = 60_000;
 
-export function App({ baseUrl, mapboxToken, initialDay, initialSlot, now }: Props) {
+/** The current time, re-read every minute and whenever the tab comes back, so a tab left open past midnight stays right. */
+function useNow(initial: Date): Date {
+  const [now, setNow] = useState(initial);
+  useEffect(() => {
+    const refresh = () => setNow(new Date());
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+    const timer = setInterval(refresh, CLOCK_REFRESH_MS);
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('focus', refresh);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('focus', refresh);
+    };
+  }, []);
+  return now;
+}
+
+export function App({ baseUrl, mapboxToken, initialDay, initialSlot, now: initialNow }: Props) {
+  const now = useNow(initialNow);
   const [day, setDay] = useState<Day>(initialDay);
   const [slot, setSlot] = useState(initialSlot);
   const [mode, setMode] = useState<Mode>('bikes');

@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
 import type { StationMapProps } from './map/StationMap';
 import { clearLegCache } from './trip/directions';
@@ -208,6 +208,49 @@ describe('App', () => {
       routes['sun.json'] = makeProfile('sun');
       await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
       expect(await screen.findByText('Walking is faster')).toBeInTheDocument();
+    });
+
+    describe('a tab left open past midnight', () => {
+      // 00:30 on Tue 3 Nov in Ljubljana; the page was loaded on Mon 2 Nov.
+      const AFTER_MIDNIGHT = new Date('2026-11-02T23:30:00Z');
+      const dateOptions = () => within(screen.getByLabelText('Date')).getAllByRole('option');
+
+      afterEach(() => vi.useRealTimers());
+
+      it('moves Today on when the tab becomes visible again, keeping the chosen date', async () => {
+        renderApp();
+        await waitReady();
+        expect(dateOptions()[0]).toHaveTextContent('Today');
+        expect(dateOptions()[0]).toHaveValue('2026-11-02');
+        vi.useFakeTimers({ toFake: ['Date'], now: AFTER_MIDNIGHT });
+        act(() => {
+          document.dispatchEvent(new Event('visibilitychange'));
+        });
+        expect(screen.getByRole('option', { name: 'Today' })).toHaveValue('2026-11-03');
+        // The date picked before midnight is now yesterday, and stays selected and listed.
+        expect(screen.getByLabelText('Date')).toHaveValue('2026-11-02');
+        expect(dateOptions()[0]).toHaveValue('2026-11-02');
+      });
+
+      it('also moves on at window focus', async () => {
+        renderApp();
+        await waitReady();
+        vi.useFakeTimers({ toFake: ['Date'], now: AFTER_MIDNIGHT });
+        act(() => {
+          window.dispatchEvent(new Event('focus'));
+        });
+        expect(screen.getByRole('option', { name: 'Today' })).toHaveValue('2026-11-03');
+      });
+
+      it('refreshes every minute', () => {
+        vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'], now: NOW });
+        renderApp();
+        vi.setSystemTime(AFTER_MIDNIGHT);
+        act(() => {
+          vi.advanceTimersByTime(60_000);
+        });
+        expect(screen.getByRole('option', { name: 'Today' })).toHaveValue('2026-11-03');
+      });
     });
 
     it('on desktop the trip card and the availability panel sit together, with no pill', async () => {
