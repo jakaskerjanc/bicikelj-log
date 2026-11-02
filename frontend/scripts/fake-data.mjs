@@ -22,10 +22,19 @@ const stations = Array.from({ length: STATIONS }, (_, i) => {
   };
 });
 
+// A holiday two days from now, so the Sunday fallback can be checked locally.
+const holiday = new Date(Date.now() + 2 * 86_400_000).toLocaleDateString('sv-SE', { timeZone: 'Europe/Ljubljana' });
+
 mkdirSync(OUT, { recursive: true });
 writeFileSync(
   new URL('meta.json', OUT),
-  JSON.stringify({ generated_at: new Date().toISOString(), timezone: 'Europe/Ljubljana', slot_minutes: 15, stations }),
+  JSON.stringify({
+    generated_at: new Date().toISOString(),
+    timezone: 'Europe/Ljubljana',
+    slot_minutes: 15,
+    holidays: [holiday],
+    stations,
+  }),
 );
 
 DAYS.forEach((day, d) => {

@@ -1,6 +1,6 @@
 from datetime import date
 
-from bicikelj_log.daytypes import DAY_TYPES, day_type
+from bicikelj_log.daytypes import DAY_TYPES, day_type, upcoming_holidays
 
 
 def test_regular_days_map_to_weekday_names():
@@ -20,3 +20,15 @@ def test_moving_holiday_easter_monday():
 def test_holiday_on_weekend_is_holiday():
     assert day_type(date(2026, 10, 31)) == "holiday"  # Reformation Day, Saturday
     assert day_type(date(2026, 11, 1)) == "holiday"   # Remembrance Day, Sunday
+
+
+def test_upcoming_holidays_lists_si_holidays_in_window():
+    got = upcoming_holidays(date(2026, 9, 23))
+    assert got[:3] == ["2026-10-31", "2026-11-01", "2026-12-25"]
+    assert "2027-03-29" in got          # Easter Monday 2027
+    assert got == sorted(got)
+    assert all("2026-09-23" <= d < "2027-09-23" for d in got)
+
+
+def test_upcoming_holidays_respects_days():
+    assert upcoming_holidays(date(2026, 10, 31), days=2) == ["2026-10-31", "2026-11-01"]

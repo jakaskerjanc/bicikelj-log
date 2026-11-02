@@ -5,6 +5,13 @@ import { installMatchMedia, setViewport } from './viewport';
 
 installMatchMedia();
 
+// jsdom has no ResizeObserver; tests that care about sizes install their own.
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};
+
 afterEach(() => {
   cleanup();
   setViewport('desktop');

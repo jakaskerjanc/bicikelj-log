@@ -137,12 +137,16 @@ Nine files, gzip-encoded JSON:
   "half_life_days": 21,
   "k": 2,
   "profiles": {"mon": {"days_used": 1.7}, "...": {}, "holiday": {"days_used": 0}},
+  "holidays": ["2026-10-31", "2026-11-01"],
   "stations": [
     {"id": "1", "name": "PREŠERNOV TRG-PETKOVŠKOVO NABREŽJE",
      "lat": 46.05, "lon": 14.50, "capacity": 20}
   ]
 }
 ```
+
+`holidays` lists the Slovenian public holidays in the next 365 days, used by the
+trip planner; added 2026-11, additive.
 
 `stations` comes from the latest `station_information/*.json` snapshot. GBFS v3
 `name` is a list of translations; `meta` stores the `sl` text (first entry if

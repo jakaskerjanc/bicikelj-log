@@ -19,23 +19,31 @@ export interface TypicalPanelProps {
   status: LoadStatus;
   daysUsed: number | null;
   onRetry: () => void;
+  /**
+   * Set while a trip is planned: the panel is then only the trip's day and time picker, labelled with this
+   * (e.g. `Leave at Tuesday, 6:15 PM`), without the availability title, legend and bikes/docks toggle,
+   * which the map doesn't follow during a trip.
+   */
+  tripLabel?: string;
 }
 
 export function TypicalPanel(props: TypicalPanelProps) {
-  const { day, slot, mode, status, daysUsed } = props;
+  const { day, slot, mode, status, daysUsed, tripLabel } = props;
   return (
-    <section className="panel" aria-label="Typical availability">
-      <div className="panel-row">
-        <h1 className="panel-title">Typical availability</h1>
-        <Legend mode={mode} />
-        <ModeToggle mode={mode} onChange={props.onMode} />
-      </div>
+    <section className="panel" aria-label={tripLabel === undefined ? 'Typical availability' : 'Trip day and time'}>
+      {tripLabel === undefined && (
+        <div className="panel-row">
+          <h1 className="panel-title">Typical availability</h1>
+          <Legend mode={mode} />
+          <ModeToggle mode={mode} onChange={props.onMode} />
+        </div>
+      )}
       <div className="panel-row panel-time">
         <DayChips day={day} onChange={props.onDay} />
         <TimeSlider slot={slot} onChange={props.onSlot} />
       </div>
       <div className="panel-row panel-status">
-        <span className="when">{`${dayName(day)}, ${slotLabel(slot)}`}</span>
+        <span className="when">{tripLabel ?? `${dayName(day)}, ${slotLabel(slot)}`}</span>
         {status === 'loading' && <span className="skeleton" role="status" aria-label="Loading data" />}
         {status === 'error' && (
           <span className="error" role="alert">

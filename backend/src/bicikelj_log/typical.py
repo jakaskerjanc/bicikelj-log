@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import NamedTuple
 from zoneinfo import ZoneInfo
 
-from .daytypes import DAY_TYPES, WEEKDAY_TYPES, DayType, day_type
+from .daytypes import DAY_TYPES, WEEKDAY_TYPES, DayType, day_type, upcoming_holidays
 
 TZ = ZoneInfo("Europe/Ljubljana")
 WINDOW_DAYS = 56
@@ -210,6 +210,7 @@ def meta_document(profiles: Mapping[str, Profile], stations: list[dict], generat
         "half_life_days": HALF_LIFE_DAYS,
         "k": SHRINK_PRIOR_WEIGHT,
         "profiles": {dt: {"days_used": round(profiles[dt].days_used, 1)} for dt in DAY_TYPES},
+        "holidays": upcoming_holidays(generated_at.astimezone(TZ).date()),
         "stations": stations,
     }
 

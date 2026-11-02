@@ -62,4 +62,36 @@ describe('useTypical', () => {
     await waitFor(() => expect(result.current.profile?.profile).toBe('wed'));
     expect(fetchFn).toHaveBeenCalledTimes(9);
   });
+
+  it('exposes every loaded profile and reports allStatus ready once all seven are in', async () => {
+    mockFetch(allRoutes());
+    const { result } = render('mon');
+    expect(result.current.allStatus).toBe('loading');
+    await waitFor(() => expect(result.current.allStatus).toBe('ready'));
+    expect(Object.keys(result.current.profiles).sort()).toEqual(['fri', 'mon', 'sat', 'sun', 'thu', 'tue', 'wed']);
+    expect(result.current.profiles.thu?.profile).toBe('thu');
+  });
+
+  it('a failed background prefetch makes allStatus an error but leaves status ready; retry refetches it', async () => {
+    const routes = allRoutes();
+    routes['thu.json'] = FAIL;
+    mockFetch(routes);
+    const { result } = render('mon');
+    await waitFor(() => expect(result.current.allStatus).toBe('error'));
+    expect(result.current.status).toBe('ready');
+    expect(result.current.profiles.thu).toBeUndefined();
+    routes['thu.json'] = makeProfile('thu');
+    act(() => result.current.retry());
+    await waitFor(() => expect(result.current.allStatus).toBe('ready'));
+    expect(result.current.profiles.thu?.profile).toBe('thu');
+  });
+
+  it('a failed meta fetch is an allStatus error too', async () => {
+    const routes = allRoutes();
+    routes['meta.json'] = FAIL;
+    mockFetch(routes);
+    const { result } = render('mon');
+    await waitFor(() => expect(result.current.allStatus).toBe('error'));
+    expect(result.current.status).toBe('error');
+  });
 });

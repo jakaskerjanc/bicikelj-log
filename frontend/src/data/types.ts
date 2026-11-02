@@ -21,6 +21,8 @@ export interface Station {
 export interface Meta {
   generated_at: string;
   stations: Station[];
+  /** Upcoming public holidays as ISO dates (YYYY-MM-DD); empty if the backend doesn't publish any. */
+  holidays: string[];
 }
 
 export interface StationSeries {
