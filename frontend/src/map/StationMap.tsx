@@ -21,6 +21,7 @@ const NO_DATA_P = -1;
 const POPUP_HALF_HEIGHT = 110;
 /** Opacity of the stations that are not part of the trip being shown. */
 const FADED_OPACITY = 0.25;
+const DEFAULT_FIT_PADDING = { top: 60, right: 60, bottom: 60, left: 60 };
 
 type RoutedTrip = Extract<TripResult, { kind: 'bike' | 'walk' }>;
 
@@ -64,6 +65,8 @@ export interface StationMapProps {
   showBoundary: boolean;
   /** When set, a map click picks that point instead of selecting a station. */
   onPick: ((at: LngLat) => void) | null;
+  /** Pixels of the map the trip's route must stay clear of when it is fitted (UI floating over the map). */
+  fitPadding?: { top: number; right: number; bottom: number; left: number };
 }
 
 export function StationMap({
@@ -80,6 +83,7 @@ export function StationMap({
   endpoints,
   showBoundary,
   onPick,
+  fitPadding = DEFAULT_FIT_PADDING,
 }: StationMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
@@ -87,6 +91,7 @@ export function StationMap({
   const onPickRef = useRef(onPick);
   const tripRef = useRef(trip);
   const selectedIdRef = useRef(selectedId);
+  const fitPaddingRef = useRef(fitPadding);
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
   const [popupNode, setPopupNode] = useState<HTMLElement | null>(null);
@@ -96,6 +101,7 @@ export function StationMap({
     onPickRef.current = onPick;
     tripRef.current = trip;
     selectedIdRef.current = selectedId;
+    fitPaddingRef.current = fitPadding;
   });
 
   // Create the map once per token.
@@ -253,7 +259,7 @@ export function StationMap({
     };
   }, [loaded, meta, profile, slot, mode, trip]);
 
-  // Draw the trip's route, and fit the map to it once per new result (not on every recolour).
+  // Draw the trip's route, and fit the map to it once per new result (not on every recolour or padding change).
   useEffect(() => {
     const map = mapRef.current;
     const source = map?.getSource<mapboxgl.GeoJSONSource>(ROUTE);
@@ -265,7 +271,7 @@ export function StationMap({
     for (const leg of shown.legs) {
       for (const [lon, lat] of leg.geometry.coordinates) bounds.extend([lon, lat]);
     }
-    map.fitBounds(bounds, { padding: 60 });
+    map.fitBounds(bounds, { padding: fitPaddingRef.current });
   }, [loaded, meta, trip]);
 
   useEffect(() => {

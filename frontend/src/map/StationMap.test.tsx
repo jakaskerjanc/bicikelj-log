@@ -234,7 +234,23 @@ describe('StationMap', () => {
       expect(fitBounds).toHaveBeenCalledTimes(2); // the stations' initial fit, then the route
       const [bounds, options] = fitBounds.mock.lastCall!;
       expect(bounds.points).toEqual([...WALK_1.geometry.coordinates, ...RIDE.geometry.coordinates, ...WALK_2.geometry.coordinates]);
-      expect(options).toMatchObject({ padding: 60 });
+      expect(options).toMatchObject({ padding: { top: 60, right: 60, bottom: 60, left: 60 } });
+    });
+
+    it('keeps the route clear of the UI over the map, using the padding it is given', () => {
+      const fitPadding = { top: 244, right: 40, bottom: 40, left: 40 };
+      renderMap({ trip: bikeTrip(0.9, 0.8), fitPadding });
+      act(() => fireLoad());
+      expect(fitBounds.mock.lastCall![1]).toMatchObject({ padding: fitPadding });
+    });
+
+    it('does not refit when only the padding changes', () => {
+      const trip = bikeTrip(0.9, 0.8);
+      const { rerender } = renderMap({ trip });
+      act(() => fireLoad());
+      fitBounds.mockClear();
+      rerender(<StationMap {...BASE_PROPS} trip={trip} fitPadding={{ top: 1, right: 2, bottom: 3, left: 4 }} />);
+      expect(fitBounds).not.toHaveBeenCalled();
     });
 
     it('draws a walk-only trip as one walk line', () => {

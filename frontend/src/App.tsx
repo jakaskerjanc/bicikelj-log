@@ -25,6 +25,13 @@ interface Props {
 const NOTICE_MS = 3000;
 const CLOCK_REFRESH_MS = 60_000;
 
+// The route is fitted into the part of the map the trip UI leaves free.
+/** Desktop: the 440 px side column (plus its 12 px inset and some air) covers the left. */
+const DESKTOP_FIT_PADDING = { top: 60, right: 60, bottom: 60, left: 12 + 440 + 40 };
+/** Mobile: the open trip card covers the top; used until it has been measured. */
+const TOP_CARD_FALLBACK_PX = 220;
+const TOP_CARD_GAP_PX = 24;
+
 /** The current time, re-read every minute and whenever the tab comes back, so a tab left open past midnight stays right. */
 function useNow(initial: Date): Date {
   const [now, setNow] = useState(initial);
@@ -43,6 +50,19 @@ function useNow(initial: Date): Date {
     };
   }, []);
   return now;
+}
+
+/** A callback ref for an element, and that element's height once it has been laid out (null before). */
+function useHeight(): [(el: HTMLDivElement | null) => void, number | null] {
+  const [element, setElement] = useState<HTMLDivElement | null>(null);
+  const [height, setHeight] = useState<number | null>(null);
+  useEffect(() => {
+    if (!element) return;
+    const observer = new ResizeObserver(([entry]) => setHeight(Math.ceil(entry.contentRect.height)));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [element]);
+  return [setElement, height];
 }
 
 export function App({ baseUrl, mapboxToken, initialDay, initialSlot, now: initialNow }: Props) {
@@ -64,6 +84,15 @@ export function App({ baseUrl, mapboxToken, initialDay, initialSlot, now: initia
   const [tripOpen, setTripOpen] = useState(false);
   const [pickTarget, setPickTarget] = useState<'from' | 'to' | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  const [topCardRef, topCardHeight] = useHeight();
+  const fitPadding = useMemo(
+    () =>
+      desktop
+        ? DESKTOP_FIT_PADDING
+        : { top: (topCardHeight ?? TOP_CARD_FALLBACK_PX) + TOP_CARD_GAP_PX, right: 40, bottom: 40, left: 40 },
+    [desktop, topCardHeight],
+  );
 
   const trip = useTrip(mapboxToken, tripInputs, meta, profiles);
   const planning = trip.status !== 'idle';
@@ -170,6 +199,7 @@ export function App({ baseUrl, mapboxToken, initialDay, initialSlot, now: initia
         endpoints={endpoints}
         showBoundary={showBoundary}
         onPick={pickTarget ? onPick : null}
+        fitPadding={fitPadding}
       />
       {!desktop && detail && !planning && <BottomSheet onClose={() => setSelectedId(null)}>{detail}</BottomSheet>}
       {desktop ? (
@@ -179,7 +209,7 @@ export function App({ baseUrl, mapboxToken, initialDay, initialSlot, now: initia
         </div>
       ) : (
         <>
-          <div className="trip-top">{search(true)}</div>
+          <div className="trip-top" ref={topCardRef}>{search(true)}</div>
           {planning && <div className="trip-dock">{tripBody}</div>}
           {!planning && availability}
         </>

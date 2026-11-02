@@ -10,8 +10,8 @@ import { setViewport } from './test/viewport';
 
 // mapbox-gl needs WebGL; the stub renders one button per station and the desktop popup content.
 vi.mock('./map/StationMap', () => ({
-  StationMap: ({ meta, onSelect, popup, trip, onPick }: StationMapProps) => (
-    <div data-testid="map">
+  StationMap: ({ meta, onSelect, popup, trip, onPick, fitPadding }: StationMapProps) => (
+    <div data-testid="map" data-fit-padding={JSON.stringify(fitPadding)}>
       <span data-testid="trip-kind">{trip?.kind ?? 'none'}</span>
       {onPick && (
         <>
@@ -250,6 +250,36 @@ describe('App', () => {
           vi.advanceTimersByTime(60_000);
         });
         expect(screen.getByRole('option', { name: 'Today' })).toHaveValue('2026-11-03');
+      });
+    });
+
+    describe('fit padding', () => {
+      const fitPadding = () => JSON.parse(screen.getByTestId('map').dataset.fitPadding!);
+
+      it('on desktop clears the side column', async () => {
+        renderApp();
+        await waitReady();
+        expect(fitPadding()).toEqual({ top: 60, right: 60, bottom: 60, left: 492 });
+      });
+
+      it('on mobile clears the top trip card once it is measured, and assumes a height until then', async () => {
+        const callbacks: ResizeObserverCallback[] = [];
+        vi.stubGlobal(
+          'ResizeObserver',
+          class {
+            constructor(callback: ResizeObserverCallback) {
+              callbacks.push(callback);
+            }
+            observe() {}
+            disconnect() {}
+          },
+        );
+        setViewport('mobile');
+        renderApp();
+        await waitReady();
+        expect(fitPadding()).toEqual({ top: 244, right: 40, bottom: 40, left: 40 });
+        act(() => callbacks.forEach((cb) => cb([{ contentRect: { height: 150.4 } } as ResizeObserverEntry], {} as ResizeObserver)));
+        expect(fitPadding()).toEqual({ top: 175, right: 40, bottom: 40, left: 40 });
       });
     });
 
