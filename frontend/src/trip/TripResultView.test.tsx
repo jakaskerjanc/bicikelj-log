@@ -1,0 +1,139 @@
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { describe, expect, it, vi } from 'vitest';
+import { META } from '../test/fixtures';
+import type { Leg, Place, StationOdds, TripInputs, TripResult } from './types';
+import { TripResultView } from './TripResultView';
+import type { TripState } from './useTrip';
+
+const place = (name: string): Place => ({ name, detail: '', at: { lon: 14.5, lat: 46.05 } });
+
+const INPUTS: TripInputs = {
+  from: place('Home'),
+  to: place('Office'),
+  timeMode: 'leave',
+  date: '2026-11-03',
+  time: '05:08',
+  risk: 'safe',
+};
+
+const leg = (mode: Leg['mode'], durationS: number): Leg => ({
+  mode,
+  durationS,
+  distanceM: 100,
+  geometry: { type: 'LineString', coordinates: [] },
+});
+
+const odds = (index: number, chance: number | null, acceptable = true): StationOdds => ({
+  station: META.stations[index],
+  chance,
+  acceptable,
+});
+
+// 05:08 and 05:30 in Ljubljana (UTC+1 in November).
+const DEPART = new Date('2026-11-03T04:08:00Z');
+const ARRIVE = new Date('2026-11-03T04:30:00Z');
+
+function bike(overrides: Partial<Extract<TripResult, { kind: 'bike' }>> = {}): TripResult {
+  return {
+    kind: 'bike',
+    depart: DEPART,
+    arrive: ARRIVE,
+    legs: [leg('walk', 300), leg('bike', 600), leg('walk', 300)],
+    pickup: odds(0, 0.95),
+    dropoff: odds(1, 0.4, false),
+    limitedData: false,
+    ...overrides,
+  };
+}
+
+const ready = (result: TripResult): TripState => ({ status: 'ready', result });
+
+describe('TripResultView', () => {
+  it('renders nothing while idle', () => {
+    const { container } = render(<TripResultView state={{ status: 'idle' }} inputs={INPUTS} />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('shows a planning message while loading', () => {
+    render(<TripResultView state={{ status: 'loading' }} inputs={INPUTS} />);
+    expect(screen.getByText('Planning…')).toBeInTheDocument();
+  });
+
+  it('shows the error with a working Retry button', async () => {
+    const retry = vi.fn();
+    render(<TripResultView state={{ status: 'error', retry }} inputs={INPUTS} />);
+    expect(screen.getByText("Couldn't get the route.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+
+  it('says which end has no station nearby', () => {
+    const { rerender } = render(<TripResultView state={ready({ kind: 'no-station', end: 'start' })} inputs={INPUTS} />);
+    expect(screen.getByText('No station within 1 km of the start')).toBeInTheDocument();
+    rerender(<TripResultView state={ready({ kind: 'no-station', end: 'end' })} inputs={INPUTS} />);
+    expect(screen.getByText('No station within 1 km of the end')).toBeInTheDocument();
+  });
+
+  it('walk result says walking is faster and has one row', () => {
+    const walk: TripResult = { kind: 'walk', depart: DEPART, arrive: ARRIVE, legs: [leg('walk', 1320)] };
+    render(<TripResultView state={ready(walk)} inputs={INPUTS} />);
+    expect(screen.getByText('Walking is faster')).toBeInTheDocument();
+    expect(screen.getByText('5:08 AM → 5:30 AM')).toBeInTheDocument();
+    expect(screen.getByText('22 min')).toBeInTheDocument();
+    expect(screen.getAllByRole('listitem')).toHaveLength(1);
+    expect(screen.getByText('Walk 22 min to Office')).toBeInTheDocument();
+  });
+
+  it('bike result shows the header, three rows and title-cased station names', () => {
+    render(<TripResultView state={ready(bike())} inputs={INPUTS} />);
+    expect(screen.getByText('5:08 AM → 5:30 AM')).toBeInTheDocument();
+    expect(screen.getByText('22 min')).toBeInTheDocument();
+    expect(screen.getByText('Walk 5 min to Prešernov Trg-Petkovškovo Nabrežje')).toBeInTheDocument();
+    expect(screen.getByText('Ride 10 min to Kongresni Trg-Šubičeva Ulica')).toBeInTheDocument();
+    expect(screen.getByText('Walk 5 min to Office')).toBeInTheDocument();
+    expect(screen.getAllByRole('listitem')).toHaveLength(3);
+  });
+
+  it('never shows less than one minute and rounds to the nearest', () => {
+    const result = bike({ legs: [leg('walk', 10), leg('bike', 89), leg('walk', 91)] });
+    render(<TripResultView state={ready(result)} inputs={INPUTS} />);
+    expect(screen.getByText(/^Walk 1 min to Prešernov/)).toBeInTheDocument();
+    expect(screen.getByText(/^Ride 1 min to Kongresni/)).toBeInTheDocument();
+    expect(screen.getByText('Walk 2 min to Office')).toBeInTheDocument();
+  });
+
+  it('labels the chances and flags the unacceptable station', () => {
+    render(<TripResultView state={ready(bike())} inputs={INPUTS} />);
+    const bikeChance = screen.getByText('Bike likely · 9 in 10');
+    expect(bikeChance).not.toHaveClass('warn');
+    const dockChance = screen.getByText('Free dock unlikely · 4 in 10');
+    expect(dockChance).toHaveClass('warn');
+  });
+
+  it('words the chance by threshold and clamps the count to 1..9', () => {
+    const result = bike({ pickup: odds(0, 0.6), dropoff: odds(1, 0.02, false) });
+    render(<TripResultView state={ready(result)} inputs={INPUTS} />);
+    expect(screen.getByText('Bike possible · 6 in 10')).toBeInTheDocument();
+    expect(screen.getByText('Free dock unlikely · 1 in 10')).toBeInTheDocument();
+  });
+
+  it('copes with a missing chance', () => {
+    render(<TripResultView state={ready(bike({ pickup: odds(0, null, false) }))} inputs={INPUTS} />);
+    expect(screen.getByText('Bike chance unknown')).toHaveClass('warn');
+  });
+
+  it('shows the departure hint only for Arrive by', () => {
+    const { rerender } = render(<TripResultView state={ready(bike())} inputs={INPUTS} />);
+    expect(screen.queryByText(/^Leave by/)).not.toBeInTheDocument();
+    rerender(<TripResultView state={ready(bike())} inputs={{ ...INPUTS, timeMode: 'arrive' }} />);
+    expect(screen.getByText('Leave by 5:08 AM to arrive by 5:30 AM')).toBeInTheDocument();
+  });
+
+  it('shows the limited-data note only when the data is thin', () => {
+    const { rerender } = render(<TripResultView state={ready(bike())} inputs={INPUTS} />);
+    expect(screen.queryByText('Limited data')).not.toBeInTheDocument();
+    rerender(<TripResultView state={ready(bike({ limitedData: true }))} inputs={INPUTS} />);
+    expect(screen.getByText('Limited data')).toBeInTheDocument();
+  });
+});
