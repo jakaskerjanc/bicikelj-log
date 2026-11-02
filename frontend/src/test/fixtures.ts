@@ -34,11 +34,24 @@ export function allRoutes(): Routes {
   return routes;
 }
 
-/** fetch stand-in: serves routes[<last path segment>]; FAIL or a missing route → 500. Mutate `routes` to change answers. */
+const MAPBOX_URL = /^https?:\/\/api\.mapbox\.com(\/[^?#]*)/;
+
+/** Route key for a request: Mapbox calls map to `directions/<profile>` or `searchbox/forward`; anything else to its last path segment, query stripped. */
+function routeKey(url: string): string {
+  const mapboxPath = MAPBOX_URL.exec(url)?.[1];
+  if (mapboxPath !== undefined) {
+    const directions = /^\/directions\/v5\/mapbox\/([^/]+)/.exec(mapboxPath);
+    if (directions) return `directions/${directions[1]}`;
+    if (mapboxPath === '/search/searchbox/v1/forward') return 'searchbox/forward';
+    return mapboxPath;
+  }
+  return url.split(/[?#]/)[0].split('/').pop() ?? '';
+}
+
+/** fetch stand-in: serves routes[<route key>]; FAIL or a missing route → 500. Mutate `routes` to change answers. */
 export function mockFetch(routes: Routes) {
   const fn = vi.fn(async (input: RequestInfo | URL) => {
-    const file = String(input).split('/').pop() ?? '';
-    const body = routes[file];
+    const body = routes[routeKey(String(input))];
     if (body === undefined || body === FAIL) return new Response('error', { status: 500 });
     return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
   });
