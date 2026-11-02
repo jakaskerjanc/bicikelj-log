@@ -1,10 +1,26 @@
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FAIL, META, mockFetch } from '../test/fixtures';
-import { clearSearchCache } from './search';
+import { clearSearchCache, searchPlaces } from './search';
 import { TripSearch, type TripSearchProps } from './TripSearch';
 import type { Place, TripInputs } from './types';
+
+// Wraps the real searchPlaces so tests can read the AbortSignal the field passes to it.
+vi.mock('./search', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./search')>();
+  return { ...actual, searchPlaces: vi.fn(actual.searchPlaces) };
+});
+
+/** A fetch that never answers, so a search stays in flight until it is aborted. */
+const hangingFetch = () => vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})));
+
+/** The AbortSignal of the n-th searchPlaces call. */
+const searchSignal = (n: number): AbortSignal => {
+  const signal = vi.mocked(searchPlaces).mock.calls[n][3];
+  if (!signal) throw new Error('searchPlaces was called without a signal');
+  return signal;
+};
 
 const NOW = new Date('2026-11-02T10:00:00Z');
 const place = (name: string, lon = 14.5, lat = 46.05): Place => ({ name, detail: '', at: { lon, lat } });
@@ -41,8 +57,8 @@ function setup(overrides: Partial<TripSearchProps> = {}) {
     ...overrides,
   };
   const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime.bind(vi) });
-  render(<TripSearch {...props} />);
-  return { props, user };
+  const { unmount } = render(<TripSearch {...props} />);
+  return { props, user, unmount };
 }
 
 function stubGeolocation(lon: number, lat: number) {
@@ -58,6 +74,7 @@ beforeEach(() => {
   // Testing Library only waits fake-timer-aware when it sees a `jest` global.
   vi.stubGlobal('jest', { advanceTimersByTime: vi.advanceTimersByTime.bind(vi) });
   clearSearchCache();
+  vi.mocked(searchPlaces).mockClear();
 });
 
 afterEach(() => {
@@ -174,7 +191,7 @@ describe('TripSearch', () => {
     );
   });
 
-  it('aborts the pending search when the query changes', async () => {
+  it('debounces: a keystroke inside the pause restarts the 400 ms wait', async () => {
     const fetchFn = mockFetch({ 'searchbox/forward': FORWARD });
     const { user } = setup();
     const to = screen.getByRole('textbox', { name: 'To' });
@@ -188,6 +205,27 @@ describe('TripSearch', () => {
     expect(String(fetchFn.mock.calls[0][0])).toContain('q=grado');
   });
 
+  it('aborts the in-flight search when the query changes', async () => {
+    hangingFetch();
+    const { user } = setup();
+    const to = screen.getByRole('textbox', { name: 'To' });
+    await user.type(to, 'grad');
+    await vi.advanceTimersByTimeAsync(400);
+    expect(searchSignal(0).aborted).toBe(false);
+    await user.type(to, 'x');
+    expect(searchSignal(0).aborted).toBe(true);
+  });
+
+  it('aborts the in-flight search when the field unmounts', async () => {
+    hangingFetch();
+    const { user, unmount } = setup();
+    await user.type(screen.getByRole('textbox', { name: 'To' }), 'grad');
+    await vi.advanceTimersByTimeAsync(400);
+    expect(searchSignal(0).aborted).toBe(false);
+    unmount();
+    expect(searchSignal(0).aborted).toBe(true);
+  });
+
   it('says Search unavailable when the search fails', async () => {
     mockFetch({ 'searchbox/forward': FAIL });
     const { user } = setup();
@@ -196,14 +234,16 @@ describe('TripSearch', () => {
     expect(await screen.findByText('Search unavailable')).toBeInTheDocument();
   });
 
-  it('does not report an aborted search as unavailable', async () => {
-    mockFetch({ 'searchbox/forward': FORWARD });
+  it('does not report an aborted search as unavailable when the user returns to its query', async () => {
+    hangingFetch();
     const { user } = setup();
     const to = screen.getByRole('textbox', { name: 'To' });
     await user.type(to, 'grad');
     await vi.advanceTimersByTimeAsync(400); // request in flight
-    await user.type(to, 'x'); // supersedes it
-    await vi.advanceTimersByTimeAsync(0);
+    await user.type(to, 'x'); // supersedes (aborts) it
+    await act(() => vi.advanceTimersByTimeAsync(0)); // let any rejection and its state update land
+    await user.type(to, '{Backspace}'); // back to the aborted query
+    await act(() => vi.advanceTimersByTimeAsync(0)); // let any rejection and its state update land
     expect(screen.queryByText('Search unavailable')).not.toBeInTheDocument();
   });
 
