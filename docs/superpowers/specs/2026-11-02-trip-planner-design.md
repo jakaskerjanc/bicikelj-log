@@ -141,8 +141,13 @@ pair and timings out. No network inside.
 7. **Fallbacks:**
    - If no station within 1 km has data: show "No station within 1 km of the
      start/end".
-   - If stations exist but none is acceptable: pick the one with the highest chance
-     and show a clear warning on that station (e.g. "Bike unlikely · 4 in 10").
+   - If stations exist but none is acceptable: consider only the pairs whose
+     combined chance is within a margin of the likeliest pair's (10 points in Safe,
+     20 in Risky). Among those, pick the lowest expected time: the estimated total
+     plus the chance of failing times a failure cost (20 min in Safe, 10 in Risky).
+     So a slightly less likely pair wins only if it saves several minutes, and
+     walking time never buys a much worse chance. Show a clear warning on any
+     station below the threshold (e.g. "Bike unlikely · 4 in 10").
    - If pickup equals drop-off, or walking straight from From to To is estimated to
      be no slower than the bike trip: show "Walking is faster" with a single walking
      route (my call).

@@ -18,6 +18,17 @@ export const DOCK_S = 60;
 export const SHORT_WALK_S = 20 * 60;
 /** A pickup or drop-off chance at or above this counts as acceptable. */
 export const THRESHOLD: Record<Risk, number> = { safe: 0.9, risky: 0.5 };
+/**
+ * With no acceptable pair, only pairs whose combined chance is at most this far below the likeliest pair's
+ * are considered, so walking time never buys a much worse chance.
+ */
+export const FALLBACK_MARGIN: Record<Risk, number> = { safe: 0.1, risky: 0.2 };
+/**
+ * Among those, each pair is judged on its estimate plus its chance of failing times this (seconds): what a
+ * failed pickup or drop-off is reckoned to cost. A less likely pair must save that much per unit of chance
+ * lost, e.g. in Safe 2 minutes for 10 points.
+ */
+export const FAILURE_COST_S: Record<Risk, number> = { safe: 20 * 60, risky: 10 * 60 };
 
 export type Profiles = Partial<Record<Day, Profile>>;
 
@@ -110,12 +121,22 @@ const combinedChance = (c: Candidate) => c.pickupChance * c.dropoffChance;
 const fasterThenLikelier = (a: Candidate, b: Candidate) =>
   a.total - b.total || combinedChance(b) - combinedChance(a);
 
-/** Likeliest first; equal chances go to the faster pair. */
-const likelierThenFaster = (a: Candidate, b: Candidate) =>
-  combinedChance(b) - combinedChance(a) || a.total - b.total;
+/** Lowest expected time first, counting a failure as `failureCost` seconds; equal ones go to the likelier pair. */
+const lowerExpectedTime = (failureCost: number) => {
+  const expected = (c: Candidate) => c.total + (1 - combinedChance(c)) * failureCost;
+  return (a: Candidate, b: Candidate) => expected(a) - expected(b) || combinedChance(b) - combinedChance(a);
+};
 
 const best = (candidates: Candidate[], compare: (a: Candidate, b: Candidate) => number) =>
   candidates.reduce((winner, c) => (compare(c, winner) < 0 ? c : winner));
+
+/** No pair is acceptable: among pairs nearly as likely as the likeliest, the lowest expected time. */
+function fallback(candidates: Candidate[], risk: Risk): Candidate {
+  const likeliest = Math.max(...candidates.map(combinedChance));
+  // The small epsilon keeps a pair exactly on the margin from dropping out to floating-point rounding.
+  const close = candidates.filter((c) => combinedChance(c) >= likeliest - FALLBACK_MARGIN[risk] - 1e-9);
+  return best(close, lowerExpectedTime(FAILURE_COST_S[risk]));
+}
 
 /**
  * Pick the pickup and drop-off stations for a trip, or decide that walking is faster, or that there is no
@@ -157,8 +178,7 @@ export function selectStations(
 
   const minimum = THRESHOLD[q.risk];
   const acceptable = candidates.filter((c) => c.pickupChance >= minimum && c.dropoffChance >= minimum);
-  const winner =
-    acceptable.length > 0 ? best(acceptable, fasterThenLikelier) : best(candidates, likelierThenFaster);
+  const winner = acceptable.length > 0 ? best(acceptable, fasterThenLikelier) : fallback(candidates, q.risk);
 
   if (walkSeconds(q.from, q.to) <= winner.total) return { kind: 'walk' };
   return { kind: 'bike', pickup: winner.pickup, dropoff: winner.dropoff, estimate: winner.estimate };

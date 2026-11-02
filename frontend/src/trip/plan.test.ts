@@ -219,11 +219,12 @@ describe('selectStations', () => {
     });
   });
 
-  it('with no acceptable pair, takes the likeliest one even though it is slower', () => {
+  it('with no acceptable pair, takes a much likelier one even though it is slower', () => {
     const from = at(0);
     const to = at(2100);
     const stations = [station('near', 300), station('far', 600), station('drop', 2000)];
     // Pickup chances 0.4 and 0.6, drop-off 0.7: nothing reaches Safe's 0.9, and the further pickup is likelier.
+    // Combined 0.28 against 0.42 is more than Safe's margin apart, so the minutes "near" saves don't count.
     const profiles = everyDay({ near: { pEmpty: 0.6 }, far: { pEmpty: 0.4 }, drop: { pFull: 0.3 } });
     const query = leaveAt('08:00', from, to, 'safe');
 
@@ -234,6 +235,40 @@ describe('selectStations', () => {
     const chance = stationChance(profiles, NO_HOLIDAYS, sel.pickup.id, 'pickup', t.atPickup);
     expect(chance).not.toBeNull();
     expect(chance!).toBeLessThan(THRESHOLD.safe);
+  });
+
+  describe('with no acceptable pair, trading a little chance for time', () => {
+    const from = at(0);
+    const to = at(2100);
+    const query = leaveAt('08:00', from, to, 'safe');
+    // Drop-off is certain; pickups: "slightly" 0.85, "likeliest" 0.89. Neither reaches Safe's 0.9.
+    const odds = (slightlyAt: number) => ({
+      stations: [station('slightly', slightlyAt), station('likeliest', 600), station('drop', 2000)],
+      profiles: everyDay({ slightly: { pEmpty: 0.15 }, likeliest: { pEmpty: 0.11 }, drop: {} }),
+    });
+
+    it('takes a slightly less likely pair that saves several minutes', () => {
+      // 300 m nearer the start: about 3 minutes saved, worth more than 4 points at 20 minutes per failure.
+      const { stations, profiles } = odds(300);
+      expect(expectBike(selectStations(query, stations, profiles, NO_HOLIDAYS)).pickup.id).toBe('slightly');
+    });
+
+    it('keeps the likeliest pair when the saving is only seconds', () => {
+      // 20 m nearer the start: well under the 48 s the lost 4 points are worth.
+      const { stations, profiles } = odds(580);
+      expect(expectBike(selectStations(query, stations, profiles, NO_HOLIDAYS)).pickup.id).toBe('likeliest');
+    });
+
+    it('lets Risky trade more chance for time than Safe', () => {
+      // Pickup 0.6 near the start against 0.85 further away, drop-off 0.45 (below even Risky's 0.5):
+      // combined 0.27 against about 0.38, 11 points apart, which is inside Risky's margin only.
+      const stations = [station('near', 300), station('far', 600), station('drop', 2000)];
+      const profiles = everyDay({ near: { pEmpty: 0.4 }, far: { pEmpty: 0.15 }, drop: { pFull: 0.55 } });
+      const pick = (risk: SelectQuery['risk']) =>
+        expectBike(selectStations(leaveAt('08:00', from, to, risk), stations, profiles, NO_HOLIDAYS)).pickup.id;
+      expect(pick('safe')).toBe('far');
+      expect(pick('risky')).toBe('near');
+    });
   });
 
   it('breaks a tie on estimated total by the higher combined chance', () => {
