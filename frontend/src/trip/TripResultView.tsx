@@ -2,12 +2,13 @@ import type { ReactNode } from 'react';
 import { colorFor } from '../data/colors';
 import { titleCase } from '../data/stations';
 import type { StationOdds, TripInputs } from './types';
-import { formatClock } from './time';
+import { formatClock, formatDateOption, ljubljanaDate, ljubljanaInstant } from './time';
 import type { TripState } from './useTrip';
 
 export interface TripResultViewProps {
   state: TripState;
   inputs: TripInputs;
+  now: Date;
 }
 
 const minutes = (seconds: number) => Math.max(1, Math.round(seconds / 60));
@@ -34,7 +35,7 @@ function Row({ mode, children }: { mode: 'walk' | 'bike'; children: ReactNode })
   return <li className={`trip-leg trip-leg-${mode}`}>{children}</li>;
 }
 
-export function TripResultView({ state, inputs }: TripResultViewProps) {
+export function TripResultView({ state, inputs, now }: TripResultViewProps) {
   if (state.status === 'idle') return null;
   if (state.status === 'loading') return <p className="trip-status">Planning…</p>;
   if (state.status === 'error') {
@@ -55,14 +56,17 @@ export function TripResultView({ state, inputs }: TripResultViewProps) {
 
   const destination = inputs.to?.name ?? '';
   const depart = formatClock(result.depart);
+  const day = formatDateOption(ljubljanaDate(result.depart), ljubljanaDate(now));
+  const passed = ljubljanaInstant(inputs.date, inputs.time).getTime() < now.getTime();
   const total = minutes((result.arrive.getTime() - result.depart.getTime()) / 1000);
 
   return (
     <div className="trip-result">
       {result.kind === 'walk' && <p className="trip-note">Walking is faster</p>}
       <p className="trip-header">
-        <strong>{`${depart} → ${formatClock(result.arrive)}`}</strong> <span>{`${total} min`}</span>
+        <strong>{`${day} · ${depart} → ${formatClock(result.arrive)}`}</strong> <span>{`${total} min`}</span>
       </p>
+      {passed && <p className="trip-note warn">This time has already passed.</p>}
       {result.kind === 'bike' && inputs.timeMode === 'arrive' && (
         <p className="trip-note">{`Leave by ${depart} to arrive by ${formatClock(result.arrive)}`}</p>
       )}

@@ -132,7 +132,7 @@ export function App({ baseUrl, mapboxToken, initialDay, initialSlot, now: initia
       </button>
     </div>
   ) : (
-    <TripResultView state={trip} inputs={tripInputs} />
+    <TripResultView state={trip} inputs={tripInputs} now={now} />
   );
 
   const search = (collapsible: boolean, children?: ReactNode) => (

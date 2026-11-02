@@ -88,9 +88,14 @@ export function profileSlot(t: Date, holidays: ReadonlySet<string>): { day: Day;
   };
 }
 
+/** The Ljubljana calendar date (`YYYY-MM-DD`) of an instant. */
+export function ljubljanaDate(t: Date): string {
+  return wallClock(t).date;
+}
+
 /** Today's Ljubljana date and the 7 after it, as consecutive calendar dates. */
 export function tripDates(now: Date): string[] {
-  const today = wallClock(now).date;
+  const today = ljubljanaDate(now);
   return Array.from({ length: TRIP_DAY_COUNT }, (_, i) => addDays(today, i));
 }
 

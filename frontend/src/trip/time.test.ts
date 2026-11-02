@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { defaultTripTime, formatClock, formatDateOption, ljubljanaInstant, profileSlot, tripDates } from './time';
+import { defaultTripTime, formatClock, formatDateOption, ljubljanaDate, ljubljanaInstant, profileSlot, tripDates } from './time';
 
 const iso = (date: string, time: string) => ljubljanaInstant(date, time).toISOString();
 
@@ -196,5 +196,13 @@ describe('formatDateOption', () => {
   it('treats tomorrow as the next calendar date on a 25 hour day', () => {
     expect(formatDateOption('2026-10-26', '2026-10-25')).toBe('Tomorrow');
     expect(formatDateOption('2026-10-25', '2026-10-24')).toBe('Tomorrow');
+  });
+});
+
+describe('ljubljanaDate', () => {
+  it('is the Ljubljana calendar date, whatever the device timezone', () => {
+    expect(ljubljanaDate(new Date('2026-11-02T22:59:59Z'))).toBe('2026-11-02');
+    expect(ljubljanaDate(new Date('2026-11-02T23:00:00Z'))).toBe('2026-11-03'); // midnight in Ljubljana (UTC+1)
+    expect(ljubljanaDate(new Date('2026-07-01T22:00:00Z'))).toBe('2026-07-02'); // midnight in summer (UTC+2)
   });
 });
