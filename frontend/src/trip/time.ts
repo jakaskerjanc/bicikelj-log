@@ -6,7 +6,6 @@ import { DAYS, type Day } from '../data/types';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const FIVE_MINUTES_MS = 5 * 60 * 1000;
-const TRIP_DAY_COUNT = 8;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 const LJUBLJANA_CLOCK = new Intl.DateTimeFormat('en-GB', {
@@ -47,7 +46,8 @@ function addDays(date: string, days: number): string {
   return new Date(utcMidnight(date).getTime() + days * DAY_MS).toISOString().slice(0, 10);
 }
 
-function weekdayOf(date: string): Day {
+/** The day of the week of a `YYYY-MM-DD` date. */
+export function weekdayOf(date: string): Day {
   return DAYS[(utcMidnight(date).getUTCDay() + 6) % 7]; // getUTCDay: 0 = Sunday, DAYS starts on Monday
 }
 
@@ -93,11 +93,6 @@ export function ljubljanaDate(t: Date): string {
   return wallClock(t).date;
 }
 
-/** Today's Ljubljana date and the 7 after it, as consecutive calendar dates. */
-export function tripDates(now: Date): string[] {
-  const today = ljubljanaDate(now);
-  return Array.from({ length: TRIP_DAY_COUNT }, (_, i) => addDays(today, i));
-}
 
 /** Initial trip inputs: the current Ljubljana time rounded up to the next 5 minutes (may land on the next date). */
 export function defaultTripTime(now: Date): { date: string; time: string } {
@@ -105,6 +100,19 @@ export function defaultTripTime(now: Date): { date: string; time: string } {
   const rounded = new Date(Math.ceil(now.getTime() / FIVE_MINUTES_MS) * FIVE_MINUTES_MS);
   const { date, hour, minute } = wallClock(rounded);
   return { date, time: `${pad2(hour)}:${pad2(minute)}` };
+}
+
+/**
+ * The trip's date and time for a day of the week and a 15-minute slot (the availability panel's picker):
+ * that day's next Ljubljana date from today (today itself when it matches), at the start of the slot.
+ * Today's current slot means now, rounded up to the next 5 minutes, so the default trip is never in the past.
+ */
+export function tripWhen(day: Day, slot: number, now: Date): { date: string; time: string } {
+  const { date: today, hour, minute } = wallClock(now);
+  const ahead = (DAYS.indexOf(day) - DAYS.indexOf(weekdayOf(today)) + 7) % 7;
+  if (ahead === 0 && slot === hour * 4 + Math.floor(minute / 15)) return defaultTripTime(now);
+  const minutes = slot * 15;
+  return { date: addDays(today, ahead), time: `${pad2(Math.floor(minutes / 60))}:${pad2(minutes % 60)}` };
 }
 
 /** Ljubljana time of day as `5:04 AM`. */

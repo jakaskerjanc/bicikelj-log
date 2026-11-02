@@ -363,6 +363,39 @@ body,
 }
 
 /* ---- Trip planner ---- */
+/* ---- Start (A) and destination (B) pins on the map ---- */
+.endpoint-pin {
+  cursor: grab;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35));
+}
+
+.endpoint-pin:active {
+  cursor: grabbing;
+}
+
+.endpoint-pin svg {
+  display: block;
+}
+
+.endpoint-pin path {
+  stroke: #fff;
+  stroke-width: 2;
+}
+
+.endpoint-pin-from path {
+  fill: #1a73e8;
+}
+
+.endpoint-pin-to path {
+  fill: #202124;
+}
+
+.endpoint-pin text {
+  fill: #fff;
+  font: 700 13px system-ui, sans-serif;
+  text-anchor: middle;
+}
+
 .trip-top {
   position: absolute;
   top: 12px;
@@ -413,6 +446,13 @@ body,
   cursor: pointer;
 }
 
+.trip-result-card {
+  padding: 10px 14px;
+  background: #fff;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
 .trip-search {
   display: grid;
   gap: 8px;
@@ -439,9 +479,7 @@ body,
   position: relative;
 }
 
-.trip-input,
-.trip-time,
-.trip-date {
+.trip-input {
   width: 100%;
   min-height: 36px;
   padding: 0 10px;
@@ -452,9 +490,7 @@ body,
   font-size: 14px;
 }
 
-.trip-input:focus-visible,
-.trip-time:focus-visible,
-.trip-date:focus-visible {
+.trip-input:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -1px;
 }
@@ -533,11 +569,6 @@ body,
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-}
-
-.trip-row .trip-time,
-.trip-row .trip-date {
-  width: auto;
 }
 
 .trip-toggle {
@@ -649,9 +680,7 @@ body,
     min-height: 44px;
   }
 
-  .trip-input,
-  .trip-time,
-  .trip-date {
+  .trip-input {
     min-height: 44px;
     font-size: 16px; /* stops iOS zooming into the field */
   }

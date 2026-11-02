@@ -1,6 +1,6 @@
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
-import type { Feature, FeatureCollection, LineString, Point } from 'geojson';
+import type { FeatureCollection, LineString } from 'geojson';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { BUCKET_COLORS, NO_DATA_COLOR, THRESHOLDS } from '../data/colors';
@@ -12,7 +12,6 @@ import type { LngLat, TripResult } from '../trip/types';
 const SOURCE = 'stations';
 const LAYER = 'stations';
 const ROUTE = 'route';
-const ENDPOINTS = 'endpoints';
 const BOUNDARY = 'boundary';
 const LJUBLJANA: [number, number] = [14.5058, 46.0569];
 /** Feature-state value for "no data": below every threshold, so `step` maps it to the grey output. */
@@ -41,12 +40,26 @@ function routeGeoJson(trip: RoutedTrip | null): FeatureCollection<LineString, { 
   };
 }
 
-function endpointsGeoJson(from: LngLat | null, to: LngLat | null): FeatureCollection<Point, { role: 'from' | 'to' }> {
-  const features: Feature<Point, { role: 'from' | 'to' }>[] = [];
-  for (const [role, at] of [['from', from], ['to', to]] as const) {
-    if (at) features.push({ type: 'Feature', geometry: { type: 'Point', coordinates: [at.lon, at.lat] }, properties: { role } });
-  }
-  return { type: 'FeatureCollection', features };
+export type EndpointRole = 'from' | 'to';
+const ROLES: EndpointRole[] = ['from', 'to'];
+const PIN_LABEL: Record<EndpointRole, { letter: string; name: string }> = {
+  from: { letter: 'A', name: 'Start' },
+  to: { letter: 'B', name: 'Destination' },
+};
+
+/** A map pin (not a dot, so it can't be mistaken for a station) lettered A for the start and B for the destination. */
+function endpointElement(role: EndpointRole): HTMLElement {
+  const { letter, name } = PIN_LABEL[role];
+  const el = document.createElement('div');
+  el.className = `endpoint-pin endpoint-pin-${role}`;
+  el.setAttribute('role', 'button');
+  el.setAttribute('aria-label', `${name}: drag to move, or click and then click the map`);
+  el.title = `${name} — drag to move, or click and then click the map`;
+  el.innerHTML =
+    '<svg viewBox="0 0 30 40" width="30" height="40" aria-hidden="true">' +
+    '<path d="M15 39C15 39 28 24 28 14A13 13 0 0 0 2 14C2 24 15 39 15 39Z"/>' +
+    `<text x="15" y="19">${letter}</text></svg>`;
+  return el;
 }
 
 export interface StationMapProps {
@@ -65,6 +78,10 @@ export interface StationMapProps {
   showBoundary: boolean;
   /** When set, a map click picks that point instead of selecting a station. */
   onPick: ((at: LngLat) => void) | null;
+  /** A start or destination pin was dragged to `at`; false refuses the move and the pin goes back. */
+  onMoveEndpoint?: (role: EndpointRole, at: LngLat) => boolean;
+  /** A start or destination pin was clicked (not dragged). */
+  onEndpointClick?: (role: EndpointRole) => void;
   /** Pixels of the map the trip's route must stay clear of when it is fitted (UI floating over the map). */
   fitPadding?: { top: number; right: number; bottom: number; left: number };
 }
@@ -83,6 +100,8 @@ export function StationMap({
   endpoints,
   showBoundary,
   onPick,
+  onMoveEndpoint,
+  onEndpointClick,
   fitPadding = DEFAULT_FIT_PADDING,
 }: StationMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -92,6 +111,10 @@ export function StationMap({
   const tripRef = useRef(trip);
   const selectedIdRef = useRef(selectedId);
   const fitPaddingRef = useRef(fitPadding);
+  const endpointsRef = useRef(endpoints);
+  const onMoveEndpointRef = useRef(onMoveEndpoint);
+  const onEndpointClickRef = useRef(onEndpointClick);
+  const markersRef = useRef<Partial<Record<EndpointRole, mapboxgl.Marker>>>({});
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
   const [popupNode, setPopupNode] = useState<HTMLElement | null>(null);
@@ -102,6 +125,9 @@ export function StationMap({
     tripRef.current = trip;
     selectedIdRef.current = selectedId;
     fitPaddingRef.current = fitPadding;
+    endpointsRef.current = endpoints;
+    onMoveEndpointRef.current = onMoveEndpoint;
+    onEndpointClickRef.current = onEndpointClick;
   });
 
   // Create the map once per token.
@@ -139,6 +165,8 @@ export function StationMap({
     resizeObserver.observe(containerRef.current);
     return () => {
       resizeObserver.disconnect();
+      for (const marker of Object.values(markersRef.current)) marker.remove();
+      markersRef.current = {};
       mapRef.current = null;
       setLoaded(false);
       map.remove();
@@ -175,7 +203,7 @@ export function StationMap({
         'circle-stroke-opacity': ['case', FADED, FADED_OPACITY, 1],
       },
     });
-    // The overlays go around the stations: boundary and route underneath, endpoints on top.
+    // The overlays go underneath the stations; the start and destination pins are DOM markers, always on top.
     map.addSource(BOUNDARY, { type: 'geojson', data: LJUBLJANA_BOUNDARY });
     map.addLayer(
       {
@@ -209,18 +237,6 @@ export function StationMap({
       },
       LAYER,
     );
-    map.addSource(ENDPOINTS, { type: 'geojson', data: endpointsGeoJson(null, null) });
-    map.addLayer({
-      id: ENDPOINTS,
-      type: 'circle',
-      source: ENDPOINTS,
-      paint: {
-        'circle-radius': 7,
-        'circle-color': ['match', ['get', 'role'], 'from', '#1a73e8', '#d93025'],
-        'circle-stroke-color': '#ffffff',
-        'circle-stroke-width': 2,
-      },
-    });
     map.on('mouseenter', LAYER, () => {
       map.getCanvas().style.cursor = 'pointer';
     });
@@ -274,11 +290,47 @@ export function StationMap({
     map.fitBounds(bounds, { padding: fitPaddingRef.current });
   }, [loaded, meta, trip]);
 
+  // The start and destination pins: created when a point is first set, moved after, removed when cleared.
   useEffect(() => {
-    const source = mapRef.current?.getSource<mapboxgl.GeoJSONSource>(ENDPOINTS);
-    if (!loaded || !meta || !source) return;
-    source.setData(endpointsGeoJson(endpoints.from, endpoints.to));
-  }, [loaded, meta, endpoints.from, endpoints.to]);
+    const map = mapRef.current;
+    if (!map || !loaded) return;
+    const positions = { from: endpoints.from, to: endpoints.to };
+    for (const role of ROLES) {
+      const at = positions[role];
+      let marker = markersRef.current[role];
+      if (!at) {
+        marker?.remove();
+        delete markersRef.current[role];
+        continue;
+      }
+      if (!marker) {
+        const element = endpointElement(role);
+        const created = new mapboxgl.Marker({ element, anchor: 'bottom', draggable: true });
+        // A mouse drag ends in a click on the pin too; that click must not also start picking. A touch
+        // drag ends without one, so the flag is reset on every new press rather than by the click.
+        let dragged = false;
+        element.addEventListener('pointerdown', () => {
+          dragged = false;
+        });
+        created.on('dragstart', () => {
+          dragged = true;
+        });
+        created.on('dragend', () => {
+          const { lng, lat } = created.getLngLat();
+          if (onMoveEndpointRef.current?.(role, { lon: lng, lat })) return;
+          const back = endpointsRef.current[role];
+          if (back) created.setLngLat([back.lon, back.lat]);
+        });
+        element.addEventListener('click', (e) => {
+          e.stopPropagation(); // not a map click: no pick, no station selection
+          if (!dragged) onEndpointClickRef.current?.(role);
+        });
+        marker = created.setLngLat([at.lon, at.lat]).addTo(map);
+        markersRef.current[role] = marker;
+      }
+      marker.setLngLat([at.lon, at.lat]);
+    }
+  }, [loaded, endpoints.from, endpoints.to]);
 
   useEffect(() => {
     const map = mapRef.current;

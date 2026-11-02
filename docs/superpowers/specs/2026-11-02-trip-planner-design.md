@@ -87,9 +87,13 @@ See `2026-10-01-typical-availability-frontend-design.md`. In short:
   - for From only, "My location"
 
   Swapping From and To is allowed (my call).
-- **Time.** A Leave at / Arrive by toggle, a time in 5-minute steps, and a date from
-  today to 7 days ahead (my call). Default: Leave at, now rounded up to the next
-  5 minutes. All times are Ljubljana time, whatever the device timezone.
+- **Time.** A Leave at / Arrive by toggle in the search card. The day and time come
+  from the availability panel's day chips and time slider: one picker for both
+  (user's decision). The trip uses that weekday's next date (today if it matches)
+  at the start of the 15-minute slot. Today's current slot means now, rounded up to
+  the next 5 minutes, which is also the default, since the panel opens on now. An
+  earlier slot today stays today and shows "This time has already passed". All
+  times are Ljubljana time, whatever the device timezone.
 - **Risk.** Safe (default) or Risky.
 - Planning runs automatically once both points are set, and re-runs on any change,
   debounced. There is no "Plan route" button (my call; it matches option B).
@@ -179,11 +183,13 @@ pair and timings out. No network inside.
     The drop-off station is coloured by its chance of a dock at the moment you arrive.
     Both use the existing bucket colours, so the map always matches the result sheet.
   - All other stations are faded and can't be tapped.
-  - The availability panel is hidden on desktop too, since it can't show a specific
-    date.
-  - Closing the result restores the panel, its settings and normal station colours.
-- **Result sheet:** replaces the availability panel at the bottom on mobile, and sits
-  below the inputs in the search card on desktop. It shows:
+  - The availability panel stays, as the trip's day and time picker only: its title,
+    legend and bikes/docks toggle are hidden, and its label reads e.g. "Leave at
+    Tuesday, 6:15 PM".
+  - Closing the result restores the full panel and normal station colours.
+- **Result sheet:** sits above the day and time picker at the bottom on mobile, and sits
+  in its own card below the day and time picker on desktop (so a result changing
+  height, e.g. "Planning…" while re-planning, never moves the picker). It shows:
   - departure → arrival, and the total
   - "Leave by HH:MM to arrive by HH:MM" for Arrive by
   - three rows: Walk N min to *pickup* (bike chance), Ride N min to *drop-off* (dock
@@ -191,7 +197,7 @@ pair and timings out. No network inside.
 - **Chance format:** "N in 10", coloured with the existing availability bucket colours.
   The wording is the builder's call. If the chosen profile has few days of history,
   the existing "Limited data" note shows.
-- Closing the result clears the route and brings back the availability panel.
+- Closing the result clears the route and brings back the full availability panel.
 
 ### Layout
 

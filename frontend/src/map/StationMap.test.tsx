@@ -1,4 +1,4 @@
-import { act, render } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 import type { FeatureCollection } from 'geojson';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Leg, TripResult } from '../trip/types';
@@ -14,6 +14,15 @@ const fitBounds = vi.fn();
 const queryRenderedFeatures = vi.fn();
 /** Every GeoJSONSource.setData call, tagged with the source it went to. */
 const setDataCalls: { source: string; data: unknown }[] = [];
+/** Every endpoint pin the map made, in order. */
+const markers: FakeMarker[] = [];
+interface FakeMarker {
+  element: HTMLElement;
+  options: { anchor?: string; draggable?: boolean };
+  lngLat: [number, number];
+  onMap: boolean;
+  fire: (event: 'dragstart' | 'dragend') => void;
+}
 let fireLoad = () => {};
 let fireClick: (e: unknown) => void = () => {};
 
@@ -63,6 +72,38 @@ vi.mock('mapbox-gl', () => {
     on() {}
     remove() {}
   }
+  class Marker implements FakeMarker {
+    element: HTMLElement;
+    lngLat: [number, number] = [0, 0];
+    onMap = false;
+    private handlers: Record<string, () => void> = {};
+    constructor(public options: { element: HTMLElement; anchor?: string; draggable?: boolean }) {
+      this.element = options.element;
+      markers.push(this);
+    }
+    setLngLat(lngLat: [number, number]) {
+      this.lngLat = lngLat;
+      return this;
+    }
+    getLngLat() {
+      return { lng: this.lngLat[0], lat: this.lngLat[1] };
+    }
+    addTo() {
+      this.onMap = true;
+      return this;
+    }
+    remove() {
+      this.onMap = false;
+      return this;
+    }
+    on(event: string, handler: () => void) {
+      this.handlers[event] = handler;
+      return this;
+    }
+    fire(event: string) {
+      this.handlers[event]?.();
+    }
+  }
   class LngLatBounds {
     points: [number, number][] = [];
     extend(point: [number, number]) {
@@ -70,7 +111,7 @@ vi.mock('mapbox-gl', () => {
       return this;
     }
   }
-  return { default: { Map, Popup, LngLatBounds } };
+  return { default: { Map, Popup, Marker, LngLatBounds } };
 });
 
 const observed: { callback: ResizeObserverCallback; target: Element }[] = [];
@@ -78,6 +119,7 @@ const observed: { callback: ResizeObserverCallback; target: Element }[] = [];
 beforeEach(() => {
   for (const fn of [resize, easeTo, addLayer, setLayoutProperty, setFeatureState, fitBounds, queryRenderedFeatures]) fn.mockClear();
   setDataCalls.length = 0;
+  markers.length = 0;
   observed.length = 0;
   vi.stubGlobal(
     'ResizeObserver',
@@ -177,16 +219,16 @@ describe('StationMap', () => {
   });
 
   describe('overlay layers', () => {
-    it('adds the route, endpoints and boundary below/above the stations layer', () => {
+    it('adds the route and boundary below the stations layer', () => {
       renderMap();
       act(() => fireLoad());
       const added = addLayer.mock.calls.map(([layer, beforeId]) => [layer.id, beforeId]);
       const ids = added.map(([id]) => id);
-      expect(ids).toEqual(expect.arrayContaining(['stations', 'route-walk', 'route-bike', 'endpoints', 'boundary']));
+      expect(ids).toEqual(expect.arrayContaining(['stations', 'route-walk', 'route-bike', 'boundary']));
       expect(ids.indexOf('stations')).toBeLessThan(ids.indexOf('route-walk'));
       expect(added.find(([id]) => id === 'route-walk')![1]).toBe('stations');
       expect(added.find(([id]) => id === 'route-bike')![1]).toBe('stations');
-      expect(added.find(([id]) => id === 'endpoints')![1]).toBeUndefined();
+      expect(added.find(([id]) => id === 'boundary')![1]).toBe('stations');
     });
 
     it('adds each overlay only once', () => {
@@ -207,18 +249,78 @@ describe('StationMap', () => {
       expect(setLayoutProperty).toHaveBeenLastCalledWith('boundary', 'visibility', 'none');
     });
 
-    it('draws the from and to points with their roles', () => {
-      const from = { lon: 14.5, lat: 46.04 };
-      const to = { lon: 14.51, lat: 46.06 };
+  });
+
+  describe('start and destination pins', () => {
+    const from = { lon: 14.5, lat: 46.04 };
+    const to = { lon: 14.51, lat: 46.06 };
+    const pin = (role: 'from' | 'to') => markers.find((m) => m.element.classList.contains(`endpoint-pin-${role}`));
+
+    it('draws a lettered, draggable pin for each point set, anchored at its tip', () => {
       const { rerender } = renderMap();
       act(() => fireLoad());
+      expect(markers).toHaveLength(0);
       rerender(<StationMap {...BASE_PROPS} endpoints={{ from, to: null }} />);
-      const last = () => setDataCalls.filter((c) => c.source === 'endpoints').at(-1)!.data as FeatureCollection;
-      expect(last().features.map((f) => [f.properties, f.geometry])).toEqual([
-        [{ role: 'from' }, { type: 'Point', coordinates: [14.5, 46.04] }],
-      ]);
+      expect(markers).toHaveLength(1);
+      expect(pin('from')).toMatchObject({ lngLat: [14.5, 46.04], onMap: true, options: { anchor: 'bottom', draggable: true } });
+      expect(pin('from')!.element).toHaveTextContent('A');
       rerender(<StationMap {...BASE_PROPS} endpoints={{ from, to }} />);
-      expect(last().features.map((f) => f.properties?.role)).toEqual(['from', 'to']);
+      expect(pin('to')).toMatchObject({ lngLat: [14.51, 46.06], onMap: true });
+      expect(pin('to')!.element).toHaveTextContent('B');
+    });
+
+    it('moves an existing pin instead of making a new one, and removes it when the point is cleared', () => {
+      const { rerender } = renderMap({ endpoints: { from, to: null } });
+      act(() => fireLoad());
+      rerender(<StationMap {...BASE_PROPS} endpoints={{ from: to, to: null }} />);
+      expect(markers).toHaveLength(1);
+      expect(pin('from')!.lngLat).toEqual([14.51, 46.06]);
+      rerender(<StationMap {...BASE_PROPS} endpoints={{ from: null, to: null }} />);
+      expect(pin('from')!.onMap).toBe(false);
+    });
+
+    it('reports where a pin was dropped, and puts it back when the move is refused', () => {
+      const onMoveEndpoint = vi.fn().mockReturnValueOnce(true).mockReturnValueOnce(false);
+      renderMap({ endpoints: { from, to }, onMoveEndpoint });
+      act(() => fireLoad());
+      const marker = pin('to')!;
+      marker.lngLat = [14.52, 46.07];
+      marker.fire('dragend');
+      expect(onMoveEndpoint).toHaveBeenLastCalledWith('to', { lon: 14.52, lat: 46.07 });
+      expect(marker.lngLat).toEqual([14.52, 46.07]); // accepted: the parent's new point will follow
+      marker.lngLat = [14.9, 46.5];
+      marker.fire('dragend');
+      expect(marker.lngLat).toEqual([14.51, 46.06]); // refused: back to the current point
+    });
+
+    it('reports a click on a pin, but not the click that ends a drag, and never as a map click', () => {
+      const onEndpointClick = vi.fn();
+      const onPick = vi.fn();
+      const onSelect = vi.fn();
+      renderMap({ endpoints: { from, to: null }, onEndpointClick, onPick, onSelect });
+      act(() => fireLoad());
+      const marker = pin('from')!;
+      const mapClicks = vi.fn();
+      document.body.appendChild(marker.element);
+      document.body.addEventListener('click', mapClicks);
+
+      fireEvent.pointerDown(marker.element);
+      fireEvent.click(marker.element);
+      expect(onEndpointClick).toHaveBeenCalledTimes(1);
+      expect(onEndpointClick).toHaveBeenLastCalledWith('from');
+
+      fireEvent.pointerDown(marker.element);
+      marker.fire('dragstart');
+      marker.fire('dragend');
+      fireEvent.click(marker.element);
+      expect(onEndpointClick).toHaveBeenCalledTimes(1);
+
+      fireEvent.pointerDown(marker.element); // a touch drag leaves no click behind; the next tap still counts
+      fireEvent.click(marker.element);
+      expect(onEndpointClick).toHaveBeenCalledTimes(2);
+      expect(mapClicks).not.toHaveBeenCalled();
+      document.body.removeEventListener('click', mapClicks);
+      marker.element.remove();
     });
   });
 

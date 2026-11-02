@@ -15,15 +15,19 @@ export interface Place {
 export type Risk = 'safe' | 'risky';
 export type TimeMode = 'leave' | 'arrive';
 
-export interface TripInputs {
+/** What the trip card sets; the day and time come from the availability panel's picker. */
+export interface TripChoice {
   from: Place | null;
   to: Place | null;
   timeMode: TimeMode;
+  risk: Risk;
+}
+
+export interface TripInputs extends TripChoice {
   /** YYYY-MM-DD */
   date: string;
   /** HH:MM */
   time: string;
-  risk: Risk;
 }
 
 export interface Leg {

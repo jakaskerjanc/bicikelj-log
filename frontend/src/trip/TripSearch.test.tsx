@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FAIL, META, mockFetch } from '../test/fixtures';
 import { clearSearchCache, searchPlaces } from './search';
 import { TripSearch, type TripSearchProps } from './TripSearch';
-import type { Place, TripInputs } from './types';
+import type { Place, TripChoice } from './types';
 
 // Wraps the real searchPlaces so tests can read the AbortSignal the field passes to it.
 vi.mock('./search', async (importOriginal) => {
@@ -23,15 +23,12 @@ const searchSignal = (n: number): AbortSignal => {
   return signal;
 };
 
-const NOW = new Date('2026-11-02T10:00:00Z');
 const place = (name: string, lon = 14.5, lat = 46.05): Place => ({ name, detail: '', at: { lon, lat } });
 
-const EMPTY: TripInputs = {
+const EMPTY: TripChoice = {
   from: null,
   to: null,
   timeMode: 'leave',
-  date: '2026-11-02',
-  time: '11:00',
   risk: 'safe',
 };
 
@@ -53,7 +50,6 @@ function setup(overrides: Partial<TripSearchProps> = {}) {
     onPickTarget: vi.fn(),
     stations: META.stations,
     token: 'tok',
-    now: NOW,
     onNotice: vi.fn(),
     ...overrides,
   };
@@ -63,7 +59,7 @@ function setup(overrides: Partial<TripSearchProps> = {}) {
 }
 
 /** The inputs the n-th onInputs update (the last by default) produces from the props' inputs. */
-const applied = (props: TripSearchProps, n = -1): TripInputs => {
+const applied = (props: TripSearchProps, n = -1): TripChoice => {
   const call = vi.mocked(props.onInputs).mock.calls.at(n);
   if (!call) throw new Error('onInputs was not called');
   return call[0](props.inputs);
@@ -109,10 +105,9 @@ describe('TripSearch', () => {
     expect(props.onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('shows the chosen place name and renders children', () => {
-    setup({ inputs: { ...EMPTY, to: place('Office') }, children: <p>Result here</p> });
+  it('shows the chosen place name', () => {
+    setup({ inputs: { ...EMPTY, to: place('Office') } });
     expect(screen.getByRole('textbox', { name: 'To' })).toHaveValue('Office');
-    expect(screen.getByText('Result here')).toBeInTheDocument();
   });
 
   it('typing lists matching stations at once and clicking one sets the destination', async () => {
@@ -302,22 +297,10 @@ describe('TripSearch', () => {
     expect(applied(props)).toEqual({ ...EMPTY, risk: 'risky' });
   });
 
-  it('time and date inputs update the inputs', async () => {
-    const { props } = setup();
-    const time = screen.getByLabelText('Time');
-    expect(time).toHaveAttribute('type', 'time');
-    expect(time).toHaveValue('11:00');
-    await userEvent.setup({ advanceTimers: vi.advanceTimersByTime.bind(vi) }).selectOptions(screen.getByLabelText('Date'), '2026-11-04');
-    expect(applied(props)).toEqual({ ...EMPTY, date: '2026-11-04' });
-  });
-
-  it('offers today and the next seven days', () => {
+  it('has no day or time fields of its own: the availability panel picks them', () => {
     setup();
-    const options = within(screen.getByLabelText('Date')).getAllByRole('option');
-    expect(options).toHaveLength(8);
-    expect(options[0]).toHaveTextContent('Today');
-    expect(options[1]).toHaveTextContent('Tomorrow');
-    expect(options[2]).toHaveTextContent('Wed 4 Nov');
+    expect(screen.queryByLabelText('Time')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Date')).not.toBeInTheDocument();
   });
 
   it('Swap exchanges From and To', async () => {
@@ -351,7 +334,6 @@ describe('TripSearch', () => {
           onPickTarget={vi.fn()}
           stations={META.stations}
           token="tok"
-          now={NOW}
           onNotice={vi.fn()}
         />
       );

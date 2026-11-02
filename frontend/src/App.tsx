@@ -1,15 +1,16 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { TypicalPanel } from './controls/TypicalPanel';
 import type { Day, Mode } from './data/types';
 import { useTypical } from './data/useTypical';
-import { StationMap } from './map/StationMap';
+import { StationMap, type EndpointRole } from './map/StationMap';
 import { BottomSheet } from './station/BottomSheet';
 import { StationDetail } from './station/StationDetail';
 import { insideLjubljana } from './trip/boundary';
-import { defaultTripTime } from './trip/time';
+import { dayName } from './data/slots';
+import { formatClock, ljubljanaInstant, tripWhen, weekdayOf } from './trip/time';
 import { TripResultView } from './trip/TripResultView';
 import { TripSearch } from './trip/TripSearch';
-import type { LngLat, TripInputs } from './trip/types';
+import type { LngLat, TripChoice, TripInputs } from './trip/types';
 import { useTrip } from './trip/useTrip';
 import { useIsDesktop } from './useIsDesktop';
 
@@ -74,13 +75,10 @@ export function App({ baseUrl, mapboxToken, initialDay, initialSlot, now: initia
   const { meta, profile, profiles, status, allStatus, retry } = useTypical(baseUrl, day);
   const desktop = useIsDesktop();
 
-  const [tripInputs, setTripInputs] = useState<TripInputs>(() => ({
-    from: null,
-    to: null,
-    timeMode: 'leave',
-    risk: 'safe',
-    ...defaultTripTime(now),
-  }));
+  const [tripChoice, setTripChoice] = useState<TripChoice>({ from: null, to: null, timeMode: 'leave', risk: 'safe' });
+  // One day and time picker for both: the trip leaves (or arrives) at the availability panel's day and slot.
+  const tripTime = tripWhen(day, slot, now);
+  const tripInputs: TripInputs = { ...tripChoice, ...tripTime };
   const [tripOpen, setTripOpen] = useState(false);
   const [pickTarget, setPickTarget] = useState<'from' | 'to' | null>(null);
   // The id makes each notice a new object, so two identical ones each get the full time on screen.
@@ -117,21 +115,34 @@ export function App({ baseUrl, mapboxToken, initialDay, initialSlot, now: initia
     return () => clearTimeout(timer);
   }, [notice]);
 
-  const onPick = useCallback(
-    (at: LngLat) => {
-      if (!pickTarget) return;
+  /** Set the start or destination to a point chosen on the map; false (with a notice) if it is outside Ljubljana. */
+  const placeOnMap = useCallback(
+    (role: EndpointRole, at: LngLat): boolean => {
       if (!insideLjubljana(at)) {
         showNotice('Pick a point inside Ljubljana');
-        return;
+        return false;
       }
-      setTripInputs((prev) => ({ ...prev, [pickTarget]: { name: 'Point on map', detail: '', at } }));
-      setPickTarget(null);
+      setTripChoice((prev) => ({ ...prev, [role]: { name: 'Point on map', detail: '', at } }));
+      setPickTarget((target) => (target === role ? null : target));
+      return true;
     },
-    [pickTarget, showNotice],
+    [showNotice],
   );
 
+  const onPick = useCallback(
+    (at: LngLat) => {
+      if (pickTarget) placeOnMap(pickTarget, at);
+    },
+    [pickTarget, placeOnMap],
+  );
+
+  // Clicking a pin moves it with the next map click; clicking it again cancels that.
+  const onEndpointClick = useCallback((role: EndpointRole) => {
+    setPickTarget((target) => (target === role ? null : role));
+  }, []);
+
   const closeTrip = () => {
-    setTripInputs((prev) => ({ ...prev, from: null, to: null }));
+    setTripChoice((prev) => ({ ...prev, from: null, to: null }));
     setPickTarget(null);
     setTripOpen(false);
     setSelectedId(null);
@@ -153,6 +164,13 @@ export function App({ baseUrl, mapboxToken, initialDay, initialSlot, now: initia
       status={status}
       daysUsed={profile?.days_used ?? null}
       onRetry={retry}
+      tripLabel={
+        planning
+          ? `${tripChoice.timeMode === 'leave' ? 'Leave at' : 'Arrive by'} ${dayName(weekdayOf(tripTime.date))}, ${formatClock(
+              ljubljanaInstant(tripTime.date, tripTime.time),
+            )}`
+          : undefined
+      }
     />
   );
 
@@ -168,10 +186,10 @@ export function App({ baseUrl, mapboxToken, initialDay, initialSlot, now: initia
     <TripResultView state={trip} inputs={tripInputs} now={now} />
   );
 
-  const search = (collapsible: boolean, children?: ReactNode) => (
+  const search = (collapsible: boolean) => (
     <TripSearch
-      inputs={tripInputs}
-      onInputs={setTripInputs}
+      inputs={tripChoice}
+      onInputs={setTripChoice}
       open={tripOpen}
       onOpen={() => setTripOpen(true)}
       onClose={closeTrip}
@@ -180,11 +198,8 @@ export function App({ baseUrl, mapboxToken, initialDay, initialSlot, now: initia
       onPickTarget={setPickTarget}
       stations={meta?.stations ?? []}
       token={mapboxToken}
-      now={now}
       onNotice={showNotice}
-    >
-      {children}
-    </TripSearch>
+    />
   );
 
   return (
@@ -203,19 +218,28 @@ export function App({ baseUrl, mapboxToken, initialDay, initialSlot, now: initia
         endpoints={endpoints}
         showBoundary={showBoundary}
         onPick={pickTarget ? onPick : null}
+        onMoveEndpoint={placeOnMap}
+        onEndpointClick={onEndpointClick}
         fitPadding={fitPadding}
       />
       {!desktop && detail && !planning && <BottomSheet onClose={() => setSelectedId(null)}>{detail}</BottomSheet>}
       {desktop ? (
         <div className="side">
-          {search(false, tripBody)}
-          {!planning && availability}
+          {search(false)}
+          {/* The picker sits above the result, so a result changing height (Planning… while a new time is
+              planned) never moves it. */}
+          {availability}
+          {tripBody && (
+            <section className="trip-result-card" aria-label="Trip result">
+              {tripBody}
+            </section>
+          )}
         </div>
       ) : (
         <>
           <div className="trip-top" ref={topCardRef}>{search(true)}</div>
           {planning && <div className="trip-dock">{tripBody}</div>}
-          {!planning && availability}
+          {availability}
         </>
       )}
       {notice && (

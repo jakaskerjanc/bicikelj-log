@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { defaultTripTime, formatClock, formatDateOption, ljubljanaDate, ljubljanaInstant, profileSlot, tripDates } from './time';
+import { defaultTripTime, formatClock, formatDateOption, ljubljanaDate, ljubljanaInstant, profileSlot, tripWhen, weekdayOf } from './time';
 
 const iso = (date: string, time: string) => ljubljanaInstant(date, time).toISOString();
 
@@ -83,52 +83,46 @@ describe('profileSlot', () => {
   });
 });
 
-describe('tripDates', () => {
-  it('lists 8 consecutive Ljubljana dates starting today', () => {
-    expect(tripDates(new Date('2026-11-02T10:00:00Z'))).toEqual([
-      '2026-11-02',
-      '2026-11-03',
-      '2026-11-04',
-      '2026-11-05',
-      '2026-11-06',
-      '2026-11-07',
-      '2026-11-08',
-      '2026-11-09',
-    ]);
+describe('tripWhen', () => {
+  // Monday 2 Nov 2026, 11:00 in Ljubljana: slot 44 is 11:00-11:15.
+  const MONDAY_11 = new Date('2026-11-02T10:00:00Z');
+
+  it('a later slot today is today at the start of that slot', () => {
+    expect(tripWhen('mon', 72, MONDAY_11)).toEqual({ date: '2026-11-02', time: '18:00' });
+    expect(tripWhen('mon', 73, MONDAY_11)).toEqual({ date: '2026-11-02', time: '18:15' });
   });
 
-  it('starts from the Ljubljana date when it differs from the UTC date', () => {
-    expect(tripDates(new Date('2026-11-02T23:30:00Z'))[0]).toBe('2026-11-03');
+  it('an earlier slot today stays today, so it can be shown as already passed', () => {
+    expect(tripWhen('mon', 4, MONDAY_11)).toEqual({ date: '2026-11-02', time: '01:00' });
   });
 
-  it('stays consecutive across the fall-back change', () => {
-    expect(tripDates(new Date('2026-10-24T10:00:00Z'))).toEqual([
-      '2026-10-24',
-      '2026-10-25',
-      '2026-10-26',
-      '2026-10-27',
-      '2026-10-28',
-      '2026-10-29',
-      '2026-10-30',
-      '2026-10-31',
-    ]);
+  it("today's current slot is now, rounded up to the next 5 minutes", () => {
+    expect(tripWhen('mon', 44, new Date('2026-11-02T10:02:00Z'))).toEqual({ date: '2026-11-02', time: '11:05' });
+    expect(tripWhen('mon', 44, MONDAY_11)).toEqual({ date: '2026-11-02', time: '11:00' });
   });
 
-  it('stays consecutive across the spring-forward change', () => {
-    expect(tripDates(new Date('2026-03-28T10:00:00Z')).slice(0, 3)).toEqual(['2026-03-28', '2026-03-29', '2026-03-30']);
+  it('the current slot rounding past midnight lands on the next date', () => {
+    // 23:58 Monday in Ljubljana, the last slot of the day.
+    expect(tripWhen('mon', 95, new Date('2026-11-02T22:58:00Z'))).toEqual({ date: '2026-11-03', time: '00:00' });
   });
 
-  it('rolls over month and year ends', () => {
-    expect(tripDates(new Date('2026-12-28T10:00:00Z'))).toEqual([
-      '2026-12-28',
-      '2026-12-29',
-      '2026-12-30',
-      '2026-12-31',
-      '2027-01-01',
-      '2027-01-02',
-      '2027-01-03',
-      '2027-01-04',
-    ]);
+  it("another day is that weekday's next date, within the coming week", () => {
+    expect(tripWhen('tue', 44, MONDAY_11)).toEqual({ date: '2026-11-03', time: '11:00' });
+    expect(tripWhen('sun', 0, MONDAY_11)).toEqual({ date: '2026-11-08', time: '00:00' });
+    // From Monday 30 Nov, Sunday is six days ahead, across the month end.
+    expect(tripWhen('sun', 95, new Date('2026-11-30T10:00:00Z'))).toEqual({ date: '2026-12-06', time: '23:45' });
+  });
+
+  it('uses the Ljubljana date, not the UTC one', () => {
+    // 00:30 Tuesday in Ljubljana is still Monday in UTC.
+    const tuesdayEarly = new Date('2026-11-02T23:30:00Z');
+    expect(tripWhen('tue', 40, tuesdayEarly)).toEqual({ date: '2026-11-03', time: '10:00' });
+    expect(tripWhen('mon', 40, tuesdayEarly)).toEqual({ date: '2026-11-09', time: '10:00' });
+  });
+
+  it('weekdayOf names the day of a date', () => {
+    expect(weekdayOf('2026-11-02')).toBe('mon');
+    expect(weekdayOf('2027-01-01')).toBe('fri');
   });
 });
 
